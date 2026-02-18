@@ -27,24 +27,28 @@ pub struct OverlayConfig {
 /// open_overlays(app, 300, true);
 /// ```
 pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_app_kit::NSScreen;
-        use objc2_foundation::MainThreadMarker;
-        let mtm = MainThreadMarker::new().expect("must run on main thread");
-        let screens = NSScreen::screens(mtm);
-        let screen_count = screens.count();
-        for i in 0..screen_count {
-            open_overlay_window(app, i, screen_count, break_duration, strict_mode);
+    let app = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_app_kit::NSScreen;
+            use objc2_foundation::MainThreadMarker;
+            // Now safe because we are on main thread
+            let mtm = MainThreadMarker::new().expect("must run on main thread");
+            let screens = NSScreen::screens(mtm);
+            let screen_count = screens.count();
+            for i in 0..screen_count {
+                open_overlay_window(&app, i, screen_count, break_duration, strict_mode);
+            }
+            // Set presentation options once after all windows are built.
+            set_presentation_options_for_overlay();
         }
-        // Set presentation options once after all windows are built.
-        set_presentation_options_for_overlay();
-    }
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        open_overlay_window(app, 0, 1, break_duration, strict_mode);
-    }
+        #[cfg(not(target_os = "macos"))]
+        {
+            open_overlay_window(&app, 0, 1, break_duration, strict_mode);
+        }
+    });
 }
 
 /// Create and open a fullscreen overlay webview for a specific display index.
@@ -122,29 +126,32 @@ fn open_overlay_window(
 /// close_overlays(&app);
 /// ```
 pub fn close_overlays(app: &AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_app_kit::NSScreen;
-        use objc2_foundation::MainThreadMarker;
-        let mtm = MainThreadMarker::new().expect("must run on main thread");
-        let count = NSScreen::screens(mtm).count();
-        for i in 0..count {
-            let label = format!("overlay_{i}");
-            if let Some(win) = app.get_webview_window(&label) {
+    let app = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_app_kit::NSScreen;
+            use objc2_foundation::MainThreadMarker;
+            let mtm = MainThreadMarker::new().expect("must run on main thread");
+            let count = NSScreen::screens(mtm).count();
+            for i in 0..count {
+                let label = format!("overlay_{i}");
+                if let Some(win) = app.get_webview_window(&label) {
+                    let _ = win.close();
+                }
+            }
+            restore_presentation_options();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(win) = app.get_webview_window("overlay_0") {
                 let _ = win.close();
             }
         }
-        restore_presentation_options();
-    }
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        if let Some(win) = app.get_webview_window("overlay_0") {
-            let _ = win.close();
-        }
-    }
-
-    log::info!("All overlay windows closed");
+        log::info!("All overlay windows closed");
+    });
 }
 
 /// Sends a "break:tick" event to all overlay windows with the remaining break time.
