@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema/capabilities/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for EyeBreak",
+  "platforms": ["macOS"],
+  "windows": ["popover", "overlay_*"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:app:default",
+    "core:tray:default",
+    "notification:default",
+    "autostart:default"
+  ]
+}
