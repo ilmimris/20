@@ -259,7 +259,10 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
             }
 
             overlay::open_overlays(&app, config_break_dur, is_strict);
-            let _ = app.emit("break:start", serde_json::json!({ "duration": config_break_dur }));
+            let _ = app.emit(
+                "break:start",
+                serde_json::json!({ "duration": config_break_dur }),
+            );
         }
     }
 }

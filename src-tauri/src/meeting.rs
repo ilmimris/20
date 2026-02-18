@@ -108,8 +108,7 @@ mod macos {
             Err(_) => return false,
         };
 
-        let deadline =
-            std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             match child.try_wait() {
                 Ok(Some(_)) => {

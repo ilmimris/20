@@ -170,7 +170,11 @@ pub fn get_config(state: State<AppState>) -> Value {
 /// save_config(cfg, state, app).expect("failed to save config");
 /// ```
 #[tauri::command]
-pub fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) -> Result<(), String> {
+pub fn save_config(
+    config: AppConfig,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
     let validated = config.validated();
     validated.save()?;
     {

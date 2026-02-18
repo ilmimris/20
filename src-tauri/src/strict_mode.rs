@@ -7,7 +7,6 @@
 /// CGEventTap requires the Accessibility permission. If denied the overlay
 /// still shows (preventing practical use of underlying apps) but OS-level
 /// event blocking is disabled; a one-time warning is logged.
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Whether the event tap is currently active.
@@ -104,7 +103,12 @@ mod tap {
             place: i32,
             options: i32,
             events_of_interest: CGEventMask,
-            callback: extern "C" fn(CGEventTapProxy, u32, CGEventRef, *mut std::ffi::c_void) -> CGEventRef,
+            callback: extern "C" fn(
+                CGEventTapProxy,
+                u32,
+                CGEventRef,
+                *mut std::ffi::c_void,
+            ) -> CGEventRef,
             user_info: *mut std::ffi::c_void,
         ) -> CFMachPortRef;
 
@@ -226,11 +230,7 @@ mod tap {
             unsafe {
                 // Disable the tap, remove its run-loop source, then release both.
                 CGEventTapEnable(handles.port.0, false);
-                CFRunLoopRemoveSource(
-                    CFRunLoopGetMain(),
-                    handles.source.0,
-                    kCFRunLoopCommonModes,
-                );
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), handles.source.0, kCFRunLoopCommonModes);
                 CFRelease(handles.source.0 as *const _);
                 CFRelease(handles.port.0 as *const _);
             }

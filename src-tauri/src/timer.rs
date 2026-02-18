@@ -133,7 +133,10 @@ impl PersistedTimer {
         let path = Self::path();
         if let Some(parent) = path.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
-                log::warn!("Failed to create timer state directory {}: {e}", parent.display());
+                log::warn!(
+                    "Failed to create timer state directory {}: {e}",
+                    parent.display()
+                );
                 return;
             }
         }

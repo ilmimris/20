@@ -32,7 +32,13 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
         let screens = unsafe { NSScreen::screens() };
         let screen_count = unsafe { screens.count() };
         for i in 0..screen_count {
-            open_overlay_window(app, i as usize, screen_count as usize, break_duration, strict_mode);
+            open_overlay_window(
+                app,
+                i as usize,
+                screen_count as usize,
+                break_duration,
+                strict_mode,
+            );
         }
         // Set presentation options once after all windows are built.
         set_presentation_options_for_overlay();
@@ -201,6 +207,8 @@ fn restore_presentation_options() {
     use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
     unsafe {
         let app = NSApplication::sharedApplication();
-        app.setPresentationOptions(NSApplicationPresentationOptions::NSApplicationPresentationDefault);
+        app.setPresentationOptions(
+            NSApplicationPresentationOptions::NSApplicationPresentationDefault,
+        );
     }
 }
