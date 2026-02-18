@@ -18,6 +18,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Whether the event tap is currently active.
 static EVENT_TAP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Enables strict input suppression so keyboard and pointer events are blocked while an overlay is active.
+///
+/// This call is idempotent: if strict input suppression is already active it returns immediately.
+/// On macOS it attempts to install a system event tap to perform OS-level blocking; if the tap cannot be created
+/// (for example due to missing Accessibility permissions) the OS-level blocking may not be enabled even though
+/// the active flag was set.
+///
+/// # Examples
+///
+/// ```
+/// // Activate strict input suppression (safe to call multiple times).
+/// enable_strict_input_suppression();
+/// enable_strict_input_suppression();
+/// ```
 pub fn enable_strict_input_suppression() {
     if EVENT_TAP_ACTIVE.swap(true, Ordering::SeqCst) {
         return; // Already active.
@@ -26,6 +40,17 @@ pub fn enable_strict_input_suppression() {
     tap::install_tap();
 }
 
+/// Disables strict input suppression and removes the macOS event tap if it was active.
+///
+/// This clears the module's global active flag; if suppression was not active this function does nothing.
+/// On macOS the installed CGEventTap (used to swallow input events) is removed, stopping OS-level input blocking.
+///
+/// # Examples
+///
+/// ```
+/// // Safe to call whether or not suppression is currently active.
+/// disable_strict_input_suppression();
+/// ```
 pub fn disable_strict_input_suppression() {
     if !EVENT_TAP_ACTIVE.swap(false, Ordering::SeqCst) {
         return; // Was not active.
@@ -93,7 +118,18 @@ mod tap {
     static mut TAP_PORT: CFMachPortRef = std::ptr::null_mut();
     static mut RUN_LOOP_SRC: CFRunLoopSourceRef = std::ptr::null_mut();
 
-    /// CGEventTap callback — returns NULL to suppress the event.
+    /// CGEventTap callback that suppresses input events while the global tap is active.
+    ///
+    /// When the global `EVENT_TAP_ACTIVE` flag is set, this callback returns `NULL` to drop
+    /// the incoming event; otherwise it forwards the original event reference.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // When the tap is active the callback returns NULL, otherwise it returns the same event.
+    /// let res = unsafe { tap_callback(std::ptr::null_mut(), 0, std::ptr::null_mut(), std::ptr::null_mut()) };
+    /// // `res` will be NULL if `EVENT_TAP_ACTIVE` is true, otherwise it will equal the provided event pointer.
+    /// ```
     extern "C" fn tap_callback(
         _proxy: CGEventTapProxy,
         _event_type: u32,
@@ -108,6 +144,17 @@ mod tap {
         }
     }
 
+    /// Installs a macOS CGEventTap used to suppress keyboard and pointer events while strict input suppression is active.
+    ///
+    /// If the event tap cannot be created (commonly because Accessibility permission is not granted), this function logs a warning and clears the global event-tap active flag so OS-level input blocking remains disabled while the overlay can still be shown.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // Install the event tap to enable system-level input suppression (macOS only).
+    /// // The call requires Accessibility permission in System Settings → Privacy & Security → Accessibility.
+    /// crate::strict_mode::install_tap();
+    /// ```
     pub fn install_tap() {
         unsafe {
             let port = CGEventTapCreate(
@@ -135,6 +182,16 @@ mod tap {
         }
     }
 
+    /// Removes the installed CG event tap and its run loop source, releasing associated system resources.
+    ///
+    /// This is safe to call when no tap is installed; in that case the function is a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Remove any previously installed event tap; safe to call even if none exists.
+    /// remove_tap();
+    /// ```
     pub fn remove_tap() {
         unsafe {
             if !TAP_PORT.is_null() {
@@ -151,7 +208,18 @@ mod tap {
     }
 }
 
-/// Log a force-skip event with timestamp.
+/// Record a user-initiated force-skip and persist it to a local skip log.
+///
+/// Writes a warning to the application log and appends a timestamped `force-skip` entry
+/// to `eyebreak/skip_log.txt` inside the user's local data directory. If the local data
+/// directory cannot be determined, the file is created relative to the current working directory.
+///
+/// # Examples
+///
+/// ```
+/// // Trigger a force-skip entry (writes to log and appends to the skip log file).
+/// log_force_skip();
+/// ```
 pub fn log_force_skip() {
     use chrono::Local;
     let timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%z").to_string();

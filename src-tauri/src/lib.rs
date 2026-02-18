@@ -12,6 +12,21 @@ use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use timer::SharedTimerState;
 
+/// Initializes logging, application state, and runs the Tauri application.
+///
+/// This function loads the application configuration, restores or creates the persistent timer
+/// state, registers application-wide state and plugins (autostart and notifications), wires the
+/// command invoke handlers, sets up the system tray, spawns the background timer loop, and starts
+/// the Tauri event loop that runs the EyeBreak application.
+///
+/// # Examples
+///
+/// ```no_run
+/// fn main() {
+///     // Starts the EyeBreak Tauri application; this call does not return until the app exits.
+///     run();
+/// }
+/// ```
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -55,7 +70,25 @@ pub fn run() {
         .expect("error while running EyeBreak");
 }
 
-/// Main timer loop. Ticks every second, fires overlays, polls meetings.
+/// Runs the main timer loop that drives work/break countdowns, emits UI events, manages overlays and strict input suppression, and polls for meetings.
+///
+/// The loop ticks once per second and:
+/// - Decrements the work timer and emits `timer:tick` events for UI updates.
+/// - Sends a pre-break notification when configured lead time is reached.
+/// - Transitions to a break phase when the work timer reaches zero, opens overlays, enables strict mode if configured, emits `break:start`, counts down the break, then emits `break:end` and resets the work timer.
+/// - Detects meetings periodically and pauses/resumes the timer with a `Meeting` pause reason; if a meeting starts during a break, it will close overlays and reset the break state.
+/// - Handles manual pauses with an optional auto-resume timeout.
+/// - Persists timer state after updates.
+///
+/// Note: This function runs indefinitely until the application exits. It uses the managed `AppState` config and the shared `SharedTimerState` to drive behavior and emits events on the provided `app` handle.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use tokio::spawn;
+/// # // `app` and `timer` are provided by the application environment.
+/// // spawn(async move { run_timer_loop(app, timer).await });
+/// ```
 async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
     use std::time::Duration;
     use tokio::time::sleep;
@@ -227,6 +260,24 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
     }
 }
 
+/// Sends a system notification informing the user a break will start after the given lead time.
+///
+/// Displays a desktop notification with a human-friendly label (minutes or seconds) and logs the event.
+///
+/// # Parameters
+///
+/// - `app`: the Tauri application handle used to show the notification.
+/// - `lead_seconds`: seconds remaining until the break; used to format the notification label.
+///
+/// # Examples
+///
+/// ```no_run
+/// use tauri::AppHandle;
+///
+/// // `app` is obtained from your Tauri setup; shown here as a placeholder.
+/// let app: AppHandle = /* get AppHandle from Tauri setup */ unimplemented!();
+/// send_pre_break_notification(&app, 90); // shows "EyeBreak: Eye break in 1 minute — get ready to look away"
+/// ```
 fn send_pre_break_notification(app: &tauri::AppHandle, lead_seconds: u32) {
     let minutes = lead_seconds / 60;
     let label = if minutes > 0 {
