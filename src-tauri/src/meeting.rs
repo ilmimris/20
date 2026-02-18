@@ -28,7 +28,21 @@ mod macos {
         "Google Meet",
     ];
 
-    /// Layer 1: Is a known native conferencing app running?
+    /// Detects whether a known native conferencing application is currently running.
+    ///
+    /// Checks the system's running applications for bundle identifiers that match the internal
+    /// list of known conferencing apps.
+    ///
+    /// # Returns
+    ///
+    /// `true` if a known native conferencing application is running, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let active = is_native_conferencing_app_running();
+    /// println!("Native conferencing app running: {}", active);
+    /// ```
     pub fn is_native_conferencing_app_running() -> bool {
         unsafe {
             let workspace = NSWorkspace::sharedWorkspace();
@@ -45,11 +59,23 @@ mod macos {
         false
     }
 
-    /// Layer 2: Do any browser/app windows have call-related titles?
+    /// Detects whether any frontmost browser window appears to be in a call based on its title.
     ///
-    /// Uses `lsappinfo` (available without special permissions for app names)
-    /// and an AppleScript fallback to query window titles of front browsers.
-    /// Returns false gracefully if permission is denied or the helper is missing.
+    /// This checks common browser processes' front-window titles via an AppleScript and scans
+    /// them for known call-related fragments. The check is best-effort: it returns `false` if
+    /// the helper command is unavailable, if execution fails, or if permissions prevent reading
+    /// window titles for the inspected windows.
+    ///
+    /// # Returns
+    ///
+    /// `true` if any front browser window title contains a known call-related pattern, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let in_call = is_browser_call_active();
+    /// // `in_call` will be `true` when a matching call title is detected, otherwise `false`.
+    /// ```
     pub fn is_browser_call_active() -> bool {
         // AppleScript to get frontmost browser window title.
         // This approach requires Accessibility permission for non-frontmost windows
@@ -88,16 +114,38 @@ mod macos {
         }
     }
 
-    /// Layer 3: Camera/microphone in use (best-effort MVP stub).
+    /// Reports whether a camera or microphone appears to be in use (best-effort stub).
     ///
-    /// A full implementation uses CMIOHardware or IOKit. For v1.0, layers 1 and 2
-    /// cover the majority of conferencing scenarios. This returns false to keep
-    /// the dependency surface minimal; can be enabled in a polish iteration.
+    /// This is a placeholder implementation for v1.0 that always returns `false`.
+    /// A complete implementation would query system APIs (e.g., CMIO/IOKit) to detect
+    /// active AV devices; keeping this as a stub avoids adding heavy native dependencies
+    /// in the initial release.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert!(!is_av_device_in_use());
+    /// ```
     pub fn is_av_device_in_use() -> bool {
         false
     }
 
-    /// Combined: returns true if any layer detects an active meeting.
+    /// Determines whether a meeting is currently active.
+    ///
+    /// Checks multiple detection layers (native conferencing apps, browser-based calls, and AV device usage)
+    /// and returns `true` if any layer indicates an active meeting.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let active = is_meeting_active();
+    /// // `active` is `true` when a meeting is detected, `false` otherwise
+    /// let _ = active;
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// `true` if a meeting is detected by any detection layer, `false` otherwise.
     pub fn is_meeting_active() -> bool {
         if is_native_conferencing_app_running() {
             return true;
@@ -111,6 +159,18 @@ mod macos {
 
 #[cfg(not(target_os = "macos"))]
 mod macos {
+    /// Reports whether a meeting is active on the host system; on non-macOS builds this stub always reports no meeting.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // On non-macOS targets this will always be false.
+    /// assert_eq!(is_meeting_active(), false);
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// `true` if a meeting is detected, `false` otherwise. On non-macOS builds this always returns `false`.
     pub fn is_meeting_active() -> bool {
         false
     }
