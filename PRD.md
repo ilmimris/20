@@ -27,7 +27,7 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 
 - iOS / Windows / Linux support (v1.0).
 - Syncing break history across devices.
-- Google Calendar / Apple iCal integration (post-v1.0).
+- Calendar integration — Outlook 365, Google Calendar, Apple iCal (v1.1).
 - Writing to or modifying any calendar data.
 
 ---
@@ -110,8 +110,6 @@ Accessible from the tray popover. Stored in `~/.config/eyebreak/config.toml`.
 | Launch at login | On | On / Off |
 | Show break notification pre-warning | On (60 sec) | Off / 30 sec / 60 sec / 2 min |
 | Meeting detection (auto-pause) | On | On / Off |
-| Outlook 365 calendar sync | Off | On / Off |
-| Pre-meeting pause lead time | 2 min | 0 / 1 / 2 / 5 min |
 
 ### 4.5 Notifications
 
@@ -127,9 +125,7 @@ Accessible from the tray popover. Stored in `~/.config/eyebreak/config.toml`.
 
 Automatically pauses the break timer when the user is in an active video call, then resumes once the call ends.
 
-**Detection strategy (Rust):**
-
-Layers 1–3 are polled every 30 seconds and are fully local. Layer 4 (Outlook) is synced every 5 minutes via network.
+**Detection strategy (Rust, all layers polled every 30 seconds, fully local):**
 
 1. **Native app detection** — query `NSWorkspace.sharedWorkspace.runningApplications` for known conferencing apps:
    - Zoom (`us.zoom.xos`)
@@ -142,59 +138,17 @@ Layers 1–3 are polled every 30 seconds and are fully local. Layer 4 (Outlook) 
 
 3. **Microphone / camera in-use indicator** — as a fallback, check macOS privacy indicators: if the camera or microphone usage indicator is active (`IOKit` or `AXUIElement` introspection), treat the session as a meeting.
 
-4. **Outlook 365 calendar** (opt-in, see §4.8) — fetch events from Microsoft Graph API. If `now` falls within a calendar event's `start`–`end` window, treat it as a meeting. Also pre-pauses the timer up to 5 minutes before a scheduled event begins.
-
 **Behavior:**
 
-- When a meeting is detected (any layer): timer pauses silently; tray icon updates to show "Paused — meeting in progress"; no break overlay is shown.
+- When a meeting is detected: timer pauses silently; tray icon updates to show "Paused — meeting in progress"; no break overlay is shown.
 - When the meeting ends: timer resumes from where it left off (does not reset to 20 min).
 - If a break was already triggered (overlay open) when a meeting starts: overlay closes immediately and timer resets to 20 min for the next cycle.
-- Layers 1–3 are local-only; no network calls are made; no meeting content is read.
+- All detection is local-only; no network calls are made; no meeting content is read.
 
 **Permissions required:**
 
 - Accessibility permission (`AXUIElement` for browser window titles) — requested on first run with explanation.
 - No screen recording permission needed; only window metadata (title, app bundle ID) is accessed.
-- Outlook integration additionally requires internet access and Microsoft account sign-in (see §4.8).
-
-### 4.8 Outlook 365 Calendar Integration
-
-Enables proactive, schedule-aware pausing by reading the user's Outlook 365 calendar via the Microsoft Graph API. This layer complements process-based detection (§4.7) by pausing the timer *before* a meeting starts rather than after it's detected in-progress.
-
-**Authentication:**
-
-- OAuth 2.0 Authorization Code flow with PKCE (no client secret — suitable for native desktop apps).
-- Azure AD app registration with minimum scope: `Calendars.Read` (read-only; no write access of any kind).
-- Auth flow opens the Microsoft sign-in page in the user's default browser via `open::that()`; the redirect is captured on a local loopback server (`127.0.0.1:<ephemeral-port>`).
-- Access token and refresh token stored in macOS Keychain via `security-framework` crate (never written to `config.toml` or disk in plaintext).
-- Silent token refresh on expiry; if refresh fails (e.g. revoked consent), app falls back to layers 1–3 and surfaces a tray notification prompting re-authentication.
-
-**Calendar sync:**
-
-- On enable, fetch events from `GET /me/calendarView` with `startDateTime` = now and `endDateTime` = now + 24 hours.
-- Fields requested: `id`, `start`, `end`, `isOnlineMeeting`, `isCancelled`, `showAs` — no subject, body, or attendee data is fetched.
-- Sync poll interval: every 5 minutes (background `tokio` task).
-- Events where `isCancelled = true` or `showAs = free` are ignored.
-- Results cached in memory; never persisted to disk.
-
-**Pre-pause logic:**
-
-- When an upcoming event's `start` is within the configured lead time (default 2 min, configurable 0–5 min), the timer pauses and the tray shows "Upcoming meeting — pausing soon."
-- If the event is cancelled or the user manually resumes before the meeting starts, the pre-pause is lifted and the timer continues.
-
-**Privacy guarantees:**
-
-- Only `start`, `end`, `isOnlineMeeting`, `isCancelled`, and `showAs` fields are requested from the API.
-- No event subject, body, location, or attendee list is requested or stored.
-- No calendar data is logged to disk; all data is in-memory only and cleared on app quit.
-- Network traffic goes only to `graph.microsoft.com`; no third-party endpoints.
-
-**UX — first-time setup:**
-
-1. User enables "Outlook 365 calendar sync" in Settings.
-2. In-app explanation dialog describes what data is read and why, with a link to the privacy policy.
-3. "Connect Outlook account" button opens Microsoft sign-in in default browser.
-4. On success, tray popover shows connected account email and "Disconnect" option.
 
 ---
 
@@ -241,11 +195,9 @@ Overlay auto-dismisses ───────────────────
 - Not available in strict mode.
 
 **Meeting flow:**
-- Meeting detected mid-countdown (process layers) → timer pauses, no overlay shown.
+- Meeting detected mid-countdown → timer pauses, no overlay shown.
 - Meeting detected while overlay is open → overlay closes immediately, timer resets to 20 min.
 - Meeting ends → timer resumes from remaining time (does not restart from 20 min).
-- Outlook calendar pre-pause → timer pauses up to 5 min before event start; tray shows "Upcoming meeting — pausing soon."
-- Pre-paused but event cancelled → timer resumes automatically.
 
 ---
 
@@ -280,13 +232,10 @@ Overlay auto-dismisses ───────────────────
 
 ## 9. Security & Privacy
 
+- No network requests; app is fully offline.
 - No telemetry or analytics in v1.0.
 - Config file stored in user-space; no admin privileges required.
 - Hardened Runtime + App Sandbox entitlements for Mac App Store readiness.
-- **Network access** is limited to `graph.microsoft.com` solely for Outlook 365 calendar sync (opt-in). No other outbound connections are made.
-- OAuth tokens stored in macOS Keychain (`security-framework`); never written to `config.toml` or any log file.
-- Minimum Microsoft Graph scope: `Calendars.Read`. No write permissions requested.
-- Calendar data (only `start`, `end`, `isOnlineMeeting`, `isCancelled`, `showAs`) is held in memory only and discarded on quit.
 
 ---
 
@@ -339,11 +288,6 @@ let tray = TrayIconBuilder::new()
 | `objc2` / `objc2-app-kit` | macOS NSScreen, presentation options, NSWorkspace |
 | `core-graphics` | `CGWindowListCopyWindowInfo` for browser window titles |
 | `accessibility` (or raw `AXUIElement` via `objc2`) | Browser window title access for web-based meeting detection |
-| `reqwest` | Async HTTP client for Microsoft Graph API calls |
-| `oauth2` | OAuth 2.0 PKCE flow with Microsoft identity platform |
-| `security-framework` | macOS Keychain storage for OAuth tokens |
-| `chrono` | Calendar event datetime parsing and comparison |
-| `open` | Opens Microsoft sign-in URL in default browser |
 
 ---
 
@@ -355,8 +299,7 @@ let tray = TrayIconBuilder::new()
 | M2 — Timer Engine | Rust countdown, persist state, sleep/wake handling |
 | M3 — Overlay | Full-screen overlay window, multi-monitor, countdown UI |
 | M4 — Strict Mode | Input consumption via `CGEventTap`, 3× Escape escape hatch, force-skip logging |
-| M5a — Meeting Detection | NSWorkspace app polling, CGWindowList title matching, mic/camera fallback, auto-pause/resume |
-| M5b — Outlook 365 Calendar | Azure AD app registration, OAuth 2.0 PKCE flow, Graph API sync, Keychain token storage, pre-pause logic |
+| M5 — Meeting Detection | NSWorkspace app polling, CGWindowList title matching, mic/camera fallback, auto-pause/resume |
 | M6 — Polish | Notifications, animations, sound, accessibility |
 | M7 — Distribution | DMG packaging, code signing, notarization, launch at login |
 
@@ -366,9 +309,7 @@ let tray = TrayIconBuilder::new()
 
 1. **App Store vs direct distribution:** App Sandbox may block `CGEventTap` (required for strict-mode input suppression) and `CGWindowListCopyWindowInfo` without explicit entitlements. Initial release will be a direct DMG download; App Store support pending entitlement audit.
 2. **Meeting detection accuracy:** Browser-based meeting detection via `AXUIElement` requires Accessibility permission, which users may deny. Fallback: manual "I'm in a meeting" toggle in tray popover — needs design.
-3. **Outlook multi-account support:** v1.0 supports a single signed-in Microsoft account. Should v1.1 support multiple accounts (personal + work)?
-4. **Azure AD app registration:** Requires registering EyeBreak as an Azure application. Decide between a shared app registration (simpler distribution, Microsoft verification required for public release) vs. user-supplied client ID (power-user option, avoids Microsoft approval).
-5. **Break customization:** Should users be able to define custom break exercises (eye rolls, palming) shown during the overlay?
+3. **Break customization:** Should users be able to define custom break exercises (eye rolls, palming) shown during the overlay?
 
 ---
 
