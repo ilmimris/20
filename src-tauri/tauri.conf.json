@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EyeBreak",
+  "version": "1.0.0",
+  "identifier": "com.eyebreak.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "macOSPrivateApi": true,
+    "trayIcon": {
+      "iconPath": "icons/eye.png",
+      "tooltip": "EyeBreak",
+      "iconAsTemplate": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "dmg",
+    "icon": ["icons/eye.png"],
+    "category": "Productivity",
+    "shortDescription": "20-20-20 Eye Care App",
+    "longDescription": "Enforces the 20-20-20 rule to reduce digital eye strain. Every 20 minutes, reminds you to look 20 feet away for 20 seconds.",
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "exceptionDomain": "",
+      "frameworks": [],
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "hardened-runtime": true
+    }
+  },
+  "plugins": {
+    "autostart": {
+      "desktop": true
+    }
+  }
+}
