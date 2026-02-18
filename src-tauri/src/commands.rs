@@ -10,6 +10,13 @@ pub struct AppState {
     pub config: std::sync::Mutex<AppConfig>,
 }
 
+/// Lock a Mutex, recovering from poisoning gracefully.
+macro_rules! lock {
+    ($m:expr) => {
+        $m.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Timer / tray commands
 // ---------------------------------------------------------------------------
@@ -29,7 +36,7 @@ pub struct AppState {
 /// ```
 #[tauri::command]
 pub fn get_timer_state(state: State<AppState>) -> Value {
-    let ts = state.timer.lock().unwrap();
+    let ts = lock!(state.timer);
     serde_json::to_value(&*ts).unwrap_or_default()
 }
 
@@ -52,7 +59,7 @@ pub fn get_timer_state(state: State<AppState>) -> Value {
 /// ```
 #[tauri::command]
 pub fn skip_break(state: State<AppState>) -> Result<(), String> {
-    let mut ts = state.timer.lock().unwrap();
+    let mut ts = lock!(state.timer);
     if ts.is_strict_mode {
         return Err("Strict mode: cannot skip breaks".into());
     }
@@ -87,7 +94,7 @@ pub fn skip_break(state: State<AppState>) -> Result<(), String> {
 /// ```
 #[tauri::command]
 pub fn pause_timer(minutes: u32, state: State<AppState>) -> Result<(), String> {
-    let mut ts = state.timer.lock().unwrap();
+    let mut ts = lock!(state.timer);
     if ts.is_strict_mode {
         return Err("Strict mode: cannot pause timer".into());
     }
@@ -114,7 +121,7 @@ pub fn pause_timer(minutes: u32, state: State<AppState>) -> Result<(), String> {
 /// ```
 #[tauri::command]
 pub fn resume_timer(state: State<AppState>) -> Result<(), String> {
-    let mut ts = state.timer.lock().unwrap();
+    let mut ts = lock!(state.timer);
     if matches!(ts.pause_reason, Some(PauseReason::Meeting)) {
         return Err("Cannot manually resume — meeting in progress".into());
     }
@@ -139,7 +146,7 @@ pub fn resume_timer(state: State<AppState>) -> Result<(), String> {
 /// assert!(json.is_object() || json.is_null());
 /// ```
 pub fn get_config(state: State<AppState>) -> Value {
-    let config = state.config.lock().unwrap();
+    let config = lock!(state.config);
     serde_json::to_value(&*config).unwrap_or_default()
 }
 
@@ -167,11 +174,11 @@ pub fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) ->
     let validated = config.validated();
     validated.save()?;
     {
-        let mut current = state.config.lock().unwrap();
+        let mut current = lock!(state.config);
         *current = validated.clone();
     }
     {
-        let mut ts = state.timer.lock().unwrap();
+        let mut ts = lock!(state.timer);
         ts.is_strict_mode = validated.strict_mode;
         ts.work_interval_seconds = validated.work_interval_minutes * 60;
     }
@@ -210,14 +217,13 @@ pub fn save_config(config: AppConfig, state: State<AppState>, app: AppHandle) ->
 /// assert_eq!(cfg["is_primary"], true);
 /// ```
 #[tauri::command]
-pub fn get_overlay_config(
-    state: State<AppState>,
-    // label is passed via JS window.__EYEBREAK_OVERLAY_CONFIG__ init script instead
-) -> Value {
-    let config = state.config.lock().unwrap();
+pub fn get_overlay_config(label: Option<String>, state: State<AppState>) -> Value {
+    let config = lock!(state.config);
+    // The primary overlay window is always labelled "overlay_0".
+    let is_primary = label.as_deref() == Some("overlay_0");
     serde_json::json!({
         "break_duration": config.break_duration_seconds,
-        "is_primary": true,
+        "is_primary": is_primary,
         "is_strict_mode": config.strict_mode,
     })
 }
@@ -245,7 +251,7 @@ pub fn force_skip_break(app: AppHandle, state: State<AppState>) -> Result<(), St
     crate::overlay::close_overlays(&app);
     // Reset timer to full interval after force-skip.
     {
-        let mut ts = state.timer.lock().unwrap();
+        let mut ts = lock!(state.timer);
         ts.seconds_remaining = ts.work_interval_seconds;
         ts.is_paused = false;
         ts.pause_reason = None;

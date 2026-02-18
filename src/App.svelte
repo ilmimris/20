@@ -14,10 +14,16 @@
   });
 
   onMount(async () => {
-    // Fetch initial state from backend
+    // Fetch initial state from backend (backend returns snake_case keys).
     try {
       const state = await invoke("get_timer_state");
-      timerState = { ...timerState, ...state };
+      timerState = {
+        ...timerState,
+        secondsRemaining: state.seconds_remaining ?? timerState.secondsRemaining,
+        isPaused: state.is_paused ?? timerState.isPaused,
+        pauseReason: state.pause_reason ?? timerState.pauseReason,
+        isStrictMode: state.is_strict_mode ?? timerState.isStrictMode,
+      };
     } catch (e) {
       console.error("Failed to get timer state:", e);
     }

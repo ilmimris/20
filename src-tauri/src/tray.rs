@@ -28,8 +28,13 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&settings_item, &separator, &quit_item])?;
 
+    let icon = app
+        .default_window_icon()
+        .ok_or_else(|| tauri::Error::AssetNotFound("tray icon (icons/eye.png)".into()))?
+        .clone();
+
     TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(icon)
         .tooltip("EyeBreak")
         .menu(&menu)
         .menu_on_left_click(false) // left click opens popover

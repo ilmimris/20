@@ -34,6 +34,7 @@
   }
 
   async function quit() {
+    if (!confirm("Quit EyeBreak?")) return;
     try {
       await invoke("quit_app");
     } catch (e) {

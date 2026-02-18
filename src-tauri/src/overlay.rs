@@ -34,6 +34,8 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
         for i in 0..screen_count {
             open_overlay_window(app, i as usize, screen_count as usize, break_duration, strict_mode);
         }
+        // Set presentation options once after all windows are built.
+        set_presentation_options_for_overlay();
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -99,10 +101,6 @@ fn open_overlay_window(
     {
         Ok(_win) => {
             log::info!("Opened overlay window {label} (primary={is_primary})");
-
-            // On macOS, set presentation options to hide menu bar and Dock.
-            #[cfg(target_os = "macos")]
-            set_presentation_options_for_overlay();
         }
         Err(e) => {
             log::error!("Failed to open overlay window {label}: {e}");
@@ -121,15 +119,25 @@ fn open_overlay_window(
 /// close_overlays(&app);
 /// ```
 pub fn close_overlays(app: &AppHandle) {
-    for i in 0..8 {
-        let label = format!("overlay_{i}");
-        if let Some(win) = app.get_webview_window(&label) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSScreen;
+        let count = unsafe { NSScreen::screens().count() };
+        for i in 0..count {
+            let label = format!("overlay_{i}");
+            if let Some(win) = app.get_webview_window(&label) {
+                let _ = win.close();
+            }
+        }
+        restore_presentation_options();
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(win) = app.get_webview_window("overlay_0") {
             let _ = win.close();
         }
     }
-
-    #[cfg(target_os = "macos")]
-    restore_presentation_options();
 
     log::info!("All overlay windows closed");
 }
@@ -145,10 +153,12 @@ pub fn close_overlays(app: &AppHandle) {
 /// emit_break_tick(&app, 10);
 /// ```
 pub fn emit_break_tick(app: &AppHandle, seconds_remaining: u32) {
-    let _ = app.emit(
+    if let Err(e) = app.emit(
         "break:tick",
         serde_json::json!({ "seconds_remaining": seconds_remaining }),
-    );
+    ) {
+        log::warn!("Failed to emit break:tick: {e}");
+    }
 }
 
 /// Set macOS presentation options to hide the menu bar, hide the Dock, and disable the Apple menu.

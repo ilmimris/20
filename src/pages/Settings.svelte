@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
 
   let { onClose } = $props();
@@ -18,6 +18,7 @@
   let isSaving = $state(false);
   let saveError = $state(null);
   let saveSuccess = $state(false);
+  let saveSuccessTimer = null;
 
   onMount(async () => {
     try {
@@ -35,7 +36,7 @@
     try {
       await invoke("save_config", { config });
       saveSuccess = true;
-      setTimeout(() => {
+      saveSuccessTimer = setTimeout(() => {
         saveSuccess = false;
       }, 2000);
     } catch (e) {
@@ -44,6 +45,10 @@
       isSaving = false;
     }
   }
+
+  onDestroy(() => {
+    if (saveSuccessTimer) clearTimeout(saveSuccessTimer);
+  });
 </script>
 
 <div class="flex flex-col h-full max-h-[500px] overflow-hidden">

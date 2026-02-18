@@ -28,7 +28,7 @@ mod macos {
         "Google Meet",
     ];
 
-    /// Detects whether a known native conferencing application is currently running.
+    /// Layer 1: Is a known native conferencing app running and not hidden?
     ///
     /// Checks the system's running applications for bundle identifiers that match the internal
     /// list of known conferencing apps.
@@ -50,7 +50,7 @@ mod macos {
             for app in apps.iter() {
                 if let Some(bundle_id) = app.bundleIdentifier() {
                     let s = bundle_id.to_string();
-                    if CONFERENCING_BUNDLE_IDS.contains(&s.as_str()) {
+                    if CONFERENCING_BUNDLE_IDS.contains(&s.as_str()) && !app.isHidden() {
                         return true;
                     }
                 }
@@ -95,22 +95,44 @@ mod macos {
             end tell
         "#;
 
-        let output = std::process::Command::new("osascript")
+        // Spawn with a 5-second timeout to avoid blocking the detection loop
+        // when Accessibility permission is denied or the script hangs.
+        let mut child = match std::process::Command::new("osascript")
             .arg("-e")
             .arg(script)
-            .output();
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
 
-        match output {
-            Ok(out) if out.status.success() => {
-                let text = String::from_utf8_lossy(&out.stdout);
-                for pattern in BROWSER_CALL_PATTERNS {
-                    if text.contains(pattern) {
-                        return true;
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    // Child exited — collect output.
+                    use std::io::Read;
+                    let mut buf = Vec::new();
+                    if let Some(mut stdout) = child.stdout.take() {
+                        let _ = stdout.read_to_end(&mut buf);
                     }
+                    let text = String::from_utf8_lossy(&buf);
+                    return BROWSER_CALL_PATTERNS.iter().any(|p| text.contains(p));
                 }
-                false
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        log::warn!("osascript timed out — killing child process");
+                        let _ = child.kill();
+                        let _ = child.wait(); // reap zombie
+                        return false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(_) => return false,
             }
-            _ => false,
         }
     }
 

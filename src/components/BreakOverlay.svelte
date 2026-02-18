@@ -1,21 +1,20 @@
 <script>
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
 
+  let initialBreakDuration = $state(20);
   let secondsLeft = $state(20);
   let isPrimary = $state(false);
   let isStrictMode = $state(false);
   let escapeCount = $state(0);
   let escapeResetTimer = null;
 
-  // Breathing circle animation state
-  let breathePhase = $state(0); // 0=expand, 1=hold, 2=shrink
-
   onMount(async () => {
     // Primary source: initialization script injected by Rust before page load.
     const injected = window.__EYEBREAK_OVERLAY_CONFIG__;
     if (injected) {
+      initialBreakDuration = injected.breakDuration ?? 20;
       secondsLeft = injected.breakDuration ?? 20;
       isPrimary = injected.isPrimary ?? false;
       isStrictMode = injected.isStrictMode ?? false;
@@ -23,6 +22,7 @@
       // Fallback: fetch from backend (development mode / direct open).
       try {
         const config = await invoke("get_overlay_config");
+        initialBreakDuration = config.break_duration;
         secondsLeft = config.break_duration;
         isPrimary = config.is_primary;
         isStrictMode = config.is_strict_mode;
@@ -83,7 +83,7 @@
   }
 
   // Compute progress for the circular timer
-  let progress = $derived(secondsLeft / 20);
+  let progress = $derived(initialBreakDuration > 0 ? secondsLeft / initialBreakDuration : 0);
   let circumference = 2 * Math.PI * 80; // r=80
   let dashoffset = $derived(circumference * (1 - progress));
 </script>

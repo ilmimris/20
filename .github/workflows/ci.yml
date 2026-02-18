@@ -33,9 +33,6 @@ jobs:
             --all-targets \
             -- -D warnings
 
-      - name: Cargo check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
-
   check-frontend:
     name: Check Frontend
     runs-on: ubuntu-latest

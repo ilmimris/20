@@ -12,6 +12,13 @@ use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use timer::SharedTimerState;
 
+/// Lock a Mutex, recovering from a poisoned state gracefully.
+macro_rules! lock {
+    ($m:expr) => {
+        $m.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
+
 /// Initializes logging, application state, and runs the Tauri application.
 ///
 /// This function loads the application configuration, restores or creates the persistent timer
@@ -59,7 +66,7 @@ pub fn run() {
             // Build the system tray.
             tray::setup_tray(app)?;
 
-            // Start the main timer loop in a background thread.
+            // Start the main timer loop in a background Tokio task.
             let app_handle = app.handle().clone();
             let timer_ref = Arc::clone(&timer_state);
             tokio::spawn(run_timer_loop(app_handle, timer_ref));
@@ -94,18 +101,19 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
     use tokio::time::sleep;
 
     let mut meeting_poll_counter = 0u32;
-
-    // Track the break phase
+    // Track the break phase locally (not in shared state to avoid extra locking).
     let mut break_active = false;
     let mut break_seconds_left: u32 = 0;
     let mut notified_pre_warning = false;
+    // Throttle disk persistence: only write every 30 ticks (≈ 30 s).
+    let mut persist_counter: u32 = 0;
 
     loop {
         sleep(Duration::from_secs(1)).await;
 
         let (config_interval, config_break_dur, is_strict, meeting_detection, pre_warning_secs) = {
             let app_state = app.state::<AppState>();
-            let cfg = app_state.config.lock().unwrap();
+            let cfg = lock!(app_state.config);
             (
                 cfg.work_interval_minutes * 60,
                 cfg.break_duration_seconds,
@@ -115,37 +123,38 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
             )
         };
 
-        // --- Meeting detection (every 30 seconds) ---
+        // --- Meeting detection (every 30 seconds, offloaded to a blocking thread) ---
         meeting_poll_counter += 1;
         if meeting_detection && meeting_poll_counter >= 30 {
             meeting_poll_counter = 0;
-            let meeting_now = meeting::is_meeting_active();
 
-            // Read current pause reason without holding lock during the decisions below.
+            let meeting_now = tokio::task::spawn_blocking(meeting::is_meeting_active)
+                .await
+                .unwrap_or(false);
+
             let currently_meeting_paused = {
-                let ts = timer.lock().unwrap();
+                let ts = lock!(timer);
                 matches!(ts.pause_reason, Some(timer::PauseReason::Meeting))
             };
 
             if meeting_now && !currently_meeting_paused {
                 log::info!("Meeting detected — pausing timer");
-                // If overlay is open, close it and reset timer.
                 if break_active {
                     overlay::close_overlays(&app);
                     strict_mode::disable_strict_input_suppression();
                     break_active = false;
-                    let mut ts = timer.lock().unwrap();
+                    let mut ts = lock!(timer);
                     ts.seconds_remaining = config_interval;
                     ts.is_paused = true;
                     ts.pause_reason = Some(timer::PauseReason::Meeting);
                 } else {
-                    let mut ts = timer.lock().unwrap();
+                    let mut ts = lock!(timer);
                     ts.is_paused = true;
                     ts.pause_reason = Some(timer::PauseReason::Meeting);
                 }
             } else if !meeting_now && currently_meeting_paused {
                 log::info!("Meeting ended — resuming timer");
-                let mut ts = timer.lock().unwrap();
+                let mut ts = lock!(timer);
                 ts.is_paused = false;
                 ts.pause_reason = None;
             }
@@ -153,36 +162,34 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
 
         // --- Break countdown phase ---
         if break_active {
+            // Decrement first, then check for completion (fixes off-by-one so the
+            // break lasts exactly config_break_dur seconds).
+            break_seconds_left = break_seconds_left.saturating_sub(1);
             if break_seconds_left == 0 {
-                // Break complete.
                 break_active = false;
                 notified_pre_warning = false;
                 overlay::close_overlays(&app);
                 strict_mode::disable_strict_input_suppression();
                 let _ = app.emit("break:end", serde_json::json!({ "force_skipped": false }));
-                let mut ts = timer.lock().unwrap();
+                let mut ts = lock!(timer);
                 ts.seconds_remaining = config_interval;
                 ts.is_paused = false;
                 ts.pause_reason = None;
                 timer::persist_state(&ts);
                 log::info!("Break complete — restarting work timer");
-                continue;
+            } else {
+                overlay::emit_break_tick(&app, break_seconds_left);
             }
-            break_seconds_left -= 1;
-            overlay::emit_break_tick(&app, break_seconds_left);
             continue;
         }
 
         // --- Work timer countdown ---
-        let paused = {
-            let ts = timer.lock().unwrap();
-            ts.is_paused
-        };
+        let paused = lock!(timer).is_paused;
 
         if paused {
-            // Handle manual pause timeout: decrement and auto-resume when expired.
+            // Handle manual pause auto-resume.
             {
-                let mut ts = timer.lock().unwrap();
+                let mut ts = lock!(timer);
                 match ts.manual_pause_seconds_remaining {
                     Some(0) => {
                         ts.manual_pause_seconds_remaining = None;
@@ -198,8 +205,8 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                 }
             }
 
-            // Emit tick for UI update even while paused.
-            let ts = timer.lock().unwrap();
+            // Emit tick so the tray popover keeps updating while paused.
+            let ts = lock!(timer);
             let _ = app.emit(
                 "timer:tick",
                 serde_json::json!({
@@ -208,13 +215,13 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                     "pause_reason": ts.pause_reason,
                 }),
             );
-            timer::persist_state(&ts);
+            maybe_persist(&timer, &mut persist_counter);
             continue;
         }
 
         // Tick the work timer.
         let seconds_remaining = {
-            let mut ts = timer.lock().unwrap();
+            let mut ts = lock!(timer);
             if ts.seconds_remaining > 0 {
                 ts.seconds_remaining -= 1;
             }
@@ -222,17 +229,14 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
         };
 
         // Pre-break notification.
-        if !notified_pre_warning
-            && pre_warning_secs > 0
-            && seconds_remaining == pre_warning_secs
-        {
+        if !notified_pre_warning && pre_warning_secs > 0 && seconds_remaining == pre_warning_secs {
             notified_pre_warning = true;
             send_pre_break_notification(&app, pre_warning_secs);
         }
 
         // Emit tick.
         {
-            let ts = timer.lock().unwrap();
+            let ts = lock!(timer);
             let _ = app.emit(
                 "timer:tick",
                 serde_json::json!({
@@ -241,8 +245,8 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                     "pause_reason": null,
                 }),
             );
-            timer::persist_state(&ts);
         }
+        maybe_persist(&timer, &mut persist_counter);
 
         // Trigger break.
         if seconds_remaining == 0 {
@@ -257,6 +261,16 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
             overlay::open_overlays(&app, config_break_dur, is_strict);
             let _ = app.emit("break:start", serde_json::json!({ "duration": config_break_dur }));
         }
+    }
+}
+
+/// Persist timer state at most once every 30 seconds.
+fn maybe_persist(timer: &SharedTimerState, counter: &mut u32) {
+    *counter += 1;
+    if *counter >= 30 {
+        *counter = 0;
+        let ts = lock!(timer);
+        timer::persist_state(&ts);
     }
 }
 
@@ -280,10 +294,17 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
 /// ```
 fn send_pre_break_notification(app: &tauri::AppHandle, lead_seconds: u32) {
     let minutes = lead_seconds / 60;
-    let label = if minutes > 0 {
-        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
-    } else {
-        format!("{lead_seconds} seconds")
+    let secs = lead_seconds % 60;
+
+    let label = match (minutes, secs) {
+        (m, 0) if m > 0 => format!("{m} minute{}", if m == 1 { "" } else { "s" }),
+        (0, s) => format!("{s} second{}", if s == 1 { "" } else { "s" }),
+        (m, s) => format!(
+            "{m} minute{} {} second{}",
+            if m == 1 { "" } else { "s" },
+            s,
+            if s == 1 { "" } else { "s" }
+        ),
     };
 
     use tauri_plugin_notification::NotificationExt;

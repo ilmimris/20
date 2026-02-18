@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     /// Work interval in minutes (1–60). Default: 20.
     pub work_interval_minutes: u32,
@@ -149,6 +150,17 @@ impl AppConfig {
     pub fn validated(mut self) -> Self {
         self.work_interval_minutes = self.work_interval_minutes.clamp(1, 60);
         self.break_duration_seconds = self.break_duration_seconds.clamp(5, 60);
+        // pre_warning_seconds: 0 (off) or 30–120.
+        if self.pre_warning_seconds != 0 {
+            self.pre_warning_seconds = self.pre_warning_seconds.clamp(30, 120);
+        }
+        // Normalise string enums to known values; fall back to default.
+        if !["dark", "light", "nature"].contains(&self.overlay_theme.as_str()) {
+            self.overlay_theme = "dark".into();
+        }
+        if !["off", "chime", "whitenoise"].contains(&self.sound.as_str()) {
+            self.sound = "off".into();
+        }
         self
     }
 }

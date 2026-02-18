@@ -4,14 +4,9 @@
 /// installed at the HID level to swallow all keyboard and pointer events
 /// so they do not pass through to underlying applications.
 ///
-/// The 3× Escape emergency escape hatch is detected in the frontend
-/// (BreakOverlay.svelte) and calls the `force_skip_break` Tauri command,
-/// which removes the tap and closes the overlay.
-///
-/// CGEventTap requires the Accessibility permission. If denied, the overlay
-/// still shows (preventing effective use of underlying apps via the always-
-/// on-top fullscreen window) but OS-level event blocking is disabled, and
-/// a one-time warning is logged.
+/// CGEventTap requires the Accessibility permission. If denied the overlay
+/// still shows (preventing practical use of underlying apps) but OS-level
+/// event blocking is disabled; a one-time warning is logged.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -63,18 +58,42 @@ pub fn disable_strict_input_suppression() {
 mod tap {
     use super::EVENT_TAP_ACTIVE;
     use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, OnceLock};
 
-    // CGEventTap constants / types (from CoreGraphics framework).
+    // ---------------------------------------------------------------------------
+    // Raw pointer wrappers — marked Send/Sync because access is serialised by
+    // TAP_STATE's Mutex and all calls happen on the main/run-loop thread.
+    // ---------------------------------------------------------------------------
+
+    #[derive(Clone, Copy)]
+    struct RawPtr(*mut std::ffi::c_void);
+    // Safety: access serialised through TAP_STATE Mutex.
+    unsafe impl Send for RawPtr {}
+    unsafe impl Sync for RawPtr {}
+
+    struct TapHandles {
+        port: RawPtr,
+        source: RawPtr,
+    }
+
+    static TAP_STATE: OnceLock<Mutex<Option<TapHandles>>> = OnceLock::new();
+
+    fn tap_state() -> &'static Mutex<Option<TapHandles>> {
+        TAP_STATE.get_or_init(|| Mutex::new(None))
+    }
+
+    // ---------------------------------------------------------------------------
+    // Type aliases matching the CoreGraphics / CoreFoundation ABI.
+    // ---------------------------------------------------------------------------
     type CGEventTapProxy = *mut std::ffi::c_void;
     type CGEventRef = *mut std::ffi::c_void;
     type CFMachPortRef = *mut std::ffi::c_void;
     type CFRunLoopSourceRef = *mut std::ffi::c_void;
     type CGEventMask = u64;
 
-    // kCGEventMaskForAllEvents covers all events.
-    const KCG_ANY_INPUT_EVENT_TYPE: u64 = !0u64;
-
-    // Tap locations.
+    // kCGEventMaskForAllEvents
+    const KCG_ANY_INPUT_EVENT_TYPE: CGEventMask = !0u64;
+    // kCGHIDEventTap = 0, kCGHeadInsertEventTap = 0, kCGEventTapOptionDefault = 0
     const KCG_HID_EVENT_TAP: i32 = 0;
     const KCG_HEAD_INSERT_EVENT_TAP: i32 = 0;
     const KCG_DEFAULT_TAP_OPTIONS: i32 = 0;
@@ -85,12 +104,7 @@ mod tap {
             place: i32,
             options: i32,
             events_of_interest: CGEventMask,
-            callback: extern "C" fn(
-                CGEventTapProxy,
-                u32,
-                CGEventRef,
-                *mut std::ffi::c_void,
-            ) -> CGEventRef,
+            callback: extern "C" fn(CGEventTapProxy, u32, CGEventRef, *mut std::ffi::c_void) -> CGEventRef,
             user_info: *mut std::ffi::c_void,
         ) -> CFMachPortRef;
 
@@ -105,7 +119,11 @@ mod tap {
             source: CFRunLoopSourceRef,
             mode: *const std::ffi::c_void,
         );
-
+        fn CFRunLoopRemoveSource(
+            rl: *mut std::ffi::c_void,
+            source: CFRunLoopSourceRef,
+            mode: *const std::ffi::c_void,
+        );
         fn CFRunLoopGetMain() -> *mut std::ffi::c_void;
 
         fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
@@ -113,10 +131,6 @@ mod tap {
 
         static kCFRunLoopCommonModes: *const std::ffi::c_void;
     }
-
-    // Global tap port (single overlay at a time).
-    static mut TAP_PORT: CFMachPortRef = std::ptr::null_mut();
-    static mut RUN_LOOP_SRC: CFRunLoopSourceRef = std::ptr::null_mut();
 
     /// CGEventTap callback that suppresses input events while the global tap is active.
     ///
@@ -133,14 +147,13 @@ mod tap {
     extern "C" fn tap_callback(
         _proxy: CGEventTapProxy,
         _event_type: u32,
-        _event: CGEventRef,
+        event: CGEventRef,
         _user_info: *mut std::ffi::c_void,
     ) -> CGEventRef {
         if EVENT_TAP_ACTIVE.load(Ordering::SeqCst) {
-            // Suppress by returning null.
-            std::ptr::null_mut()
+            std::ptr::null_mut() // suppress
         } else {
-            _event
+            event // pass through
         }
     }
 
@@ -156,6 +169,11 @@ mod tap {
     /// crate::strict_mode::install_tap();
     /// ```
     pub fn install_tap() {
+        let mut guard = tap_state().lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_some() {
+            return; // Already installed.
+        }
+
         unsafe {
             let port = CGEventTapCreate(
                 KCG_HID_EVENT_TAP,
@@ -169,15 +187,25 @@ mod tap {
                 log::warn!(
                     "CGEventTapCreate returned null — Accessibility permission likely denied. \
                      Strict mode overlay is shown but OS-level input blocking is disabled. \
-                     Grant Accessibility access in System Settings → Privacy & Security → Accessibility."
+                     Grant access in System Settings → Privacy & Security → Accessibility."
                 );
                 EVENT_TAP_ACTIVE.store(false, Ordering::SeqCst);
                 return;
             }
+
             let src = CFMachPortCreateRunLoopSource(std::ptr::null(), port, 0);
+            if src.is_null() {
+                log::warn!("CFMachPortCreateRunLoopSource returned null — releasing port");
+                CFRelease(port as *const _);
+                EVENT_TAP_ACTIVE.store(false, Ordering::SeqCst);
+                return;
+            }
+
             CFRunLoopAddSource(CFRunLoopGetMain(), src, kCFRunLoopCommonModes);
-            TAP_PORT = port;
-            RUN_LOOP_SRC = src;
+            *guard = Some(TapHandles {
+                port: RawPtr(port),
+                source: RawPtr(src),
+            });
             log::info!("CGEventTap installed for strict mode input suppression");
         }
     }
@@ -193,15 +221,18 @@ mod tap {
     /// remove_tap();
     /// ```
     pub fn remove_tap() {
-        unsafe {
-            if !TAP_PORT.is_null() {
-                CGEventTapEnable(TAP_PORT, false);
-                CFRelease(TAP_PORT as *const _);
-                TAP_PORT = std::ptr::null_mut();
-            }
-            if !RUN_LOOP_SRC.is_null() {
-                CFRelease(RUN_LOOP_SRC as *const _);
-                RUN_LOOP_SRC = std::ptr::null_mut();
+        let mut guard = tap_state().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(handles) = guard.take() {
+            unsafe {
+                // Disable the tap, remove its run-loop source, then release both.
+                CGEventTapEnable(handles.port.0, false);
+                CFRunLoopRemoveSource(
+                    CFRunLoopGetMain(),
+                    handles.source.0,
+                    kCFRunLoopCommonModes,
+                );
+                CFRelease(handles.source.0 as *const _);
+                CFRelease(handles.port.0 as *const _);
             }
             log::info!("CGEventTap removed");
         }
@@ -225,7 +256,6 @@ pub fn log_force_skip() {
     let timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%z").to_string();
     log::warn!("Break force-skipped via 3× Escape at {timestamp}");
 
-    // Append to skip log file.
     let mut path = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     path.push("eyebreak");
     path.push("skip_log.txt");

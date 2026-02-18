@@ -35,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Import Apple Developer Certificate
-        if: env.APPLE_CERTIFICATE != ''
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -50,6 +50,7 @@ jobs:
             -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: \
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm -f certificate.p12
 
       - name: Build universal macOS binary
         env:
@@ -58,12 +59,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         run: |
+          cat > /tmp/tauri-signing.json <<JSON
+          {"bundle":{"macOS":{"signingIdentity":"$APPLE_SIGNING_IDENTITY"}}}
+          JSON
           npm run tauri build -- \
             --target universal-apple-darwin \
-            --config '{"bundle":{"macOS":{"signingIdentity":"${{ secrets.APPLE_SIGNING_IDENTITY }}"}}}'
+            --config /tmp/tauri-signing.json
 
       - name: Notarize app
-        if: env.APPLE_ID != ''
+        if: ${{ secrets.APPLE_ID != '' }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

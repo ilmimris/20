@@ -132,17 +132,28 @@ impl PersistedTimer {
         };
         let path = Self::path();
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(e) = fs::create_dir_all(parent) {
+                log::warn!("Failed to create timer state directory {}: {e}", parent.display());
+                return;
+            }
         }
-        if let Ok(json) = serde_json::to_string(&state) {
-            let _ = fs::write(&path, json);
+        match serde_json::to_string(&state) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&path, json) {
+                    log::warn!("Failed to write timer state to {}: {e}", path.display());
+                }
+            }
+            Err(e) => log::warn!("Failed to serialise timer state: {e}"),
         }
     }
 }
 
 pub type SharedTimerState = Arc<Mutex<TimerState>>;
 
-/// Restore timer state from disk when the persisted remaining seconds fit the current work interval; otherwise create a fresh `TimerState` from the provided config.
+/// Initialise timer state from persisted disk state (if available).
+///
+/// Subtracts the time elapsed since the state was saved so that the countdown
+/// continues correctly across restarts and sleep/wake cycles.
 ///
 /// If a persisted state exists and its `seconds_remaining` is less than or equal to `config.work_interval_minutes * 60`, the persisted remaining seconds are used while other runtime fields are initialized from `config`. If no compatible persisted state is found, a new `TimerState` is returned via `TimerState::new`.
 ///
@@ -157,19 +168,37 @@ pub type SharedTimerState = Arc<Mutex<TimerState>>;
 /// let state = crate::timer::restore_or_create(&config);
 /// ```
 pub fn restore_or_create(config: &AppConfig) -> TimerState {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     let interval = config.work_interval_minutes * 60;
+
     if let Some(persisted) = PersistedTimer::load() {
-        // Don't restore if the interval has changed.
-        if persisted.seconds_remaining <= interval {
-            return TimerState {
-                seconds_remaining: persisted.seconds_remaining,
-                is_paused: false,
-                pause_reason: None,
-                is_strict_mode: config.strict_mode,
-                work_interval_seconds: interval,
-                manual_pause_seconds_remaining: None,
-            };
+        // Skip restore if the work interval setting changed.
+        if persisted.seconds_remaining > interval {
+            return TimerState::new(config);
         }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(persisted.saved_at);
+
+        let elapsed = now.saturating_sub(persisted.saved_at);
+        let adjusted = persisted.seconds_remaining.saturating_sub(elapsed as u32);
+
+        // If the timer would have expired while the app was away, start fresh.
+        if adjusted == 0 {
+            return TimerState::new(config);
+        }
+
+        return TimerState {
+            seconds_remaining: adjusted,
+            is_paused: false,
+            pause_reason: None,
+            is_strict_mode: config.strict_mode,
+            work_interval_seconds: interval,
+            manual_pause_seconds_remaining: None,
+        };
     }
     TimerState::new(config)
 }
