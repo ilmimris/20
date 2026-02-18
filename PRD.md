@@ -26,9 +26,11 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 ### 1.4 Non-Goals
 
 - iOS / Windows / Linux support (v1.0).
+- Mac App Store distribution (v1.0); initial release is direct DMG via GitHub Releases.
 - Syncing break history across devices.
 - Calendar integration — Outlook 365, Google Calendar, Apple iCal (v1.1).
 - Writing to or modifying any calendar data.
+- Custom break exercises (eye rolls, palming, etc.) — post-v1.0.
 
 ---
 
@@ -50,7 +52,7 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 | Frontend (overlay UI) | Svelte + TailwindCSS |
 | Backend / system integration | Rust |
 | Target OS | macOS 13 Ventura and later |
-| Distribution | Direct download (DMG), later Mac App Store |
+| Distribution | GitHub Releases (DMG, notarized) |
 
 **Rationale for Tauri:** Significantly smaller binary than Electron (~10 MB vs ~150 MB), native Rust backend for OS integration, lower memory footprint, built-in system tray API.
 
@@ -147,7 +149,8 @@ Automatically pauses the break timer when the user is in an active video call, t
 
 **Permissions required:**
 
-- Accessibility permission (`AXUIElement` for browser window titles) — requested on first run with explanation.
+- Accessibility permission (`AXUIElement`) is needed for layer 2 (browser window title matching). It is requested on first run with a plain-language explanation.
+- **If the user denies Accessibility permission:** layer 2 is silently disabled; layers 1 (native app) and 3 (mic/camera) continue to operate. A one-time warning notification is shown: *"Browser-based call detection disabled — grant Accessibility access in System Settings → Privacy & Security → Accessibility to enable it."* A persistent warning badge appears in the tray popover until access is granted. The app never re-prompts automatically.
 - No screen recording permission needed; only window metadata (title, app bundle ID) is accessed.
 
 ---
@@ -235,7 +238,7 @@ Overlay auto-dismisses ───────────────────
 - No network requests; app is fully offline.
 - No telemetry or analytics in v1.0.
 - Config file stored in user-space; no admin privileges required.
-- Hardened Runtime + App Sandbox entitlements for Mac App Store readiness.
+- Hardened Runtime enabled for notarization (required for direct DMG distribution on macOS). App Sandbox is intentionally not used in v1.0, as it would block `CGEventTap` and `CGWindowListCopyWindowInfo`.
 
 ---
 
@@ -301,19 +304,11 @@ let tray = TrayIconBuilder::new()
 | M4 — Strict Mode | Input consumption via `CGEventTap`, 3× Escape escape hatch, force-skip logging |
 | M5 — Meeting Detection | NSWorkspace app polling, CGWindowList title matching, mic/camera fallback, auto-pause/resume |
 | M6 — Polish | Notifications, animations, sound, accessibility |
-| M7 — Distribution | DMG packaging, code signing, notarization, launch at login |
+| M7 — Distribution | DMG packaging, code signing, notarization, GitHub Release workflow (CI uploads signed DMG as release asset) |
 
 ---
 
-## 12. Open Questions
-
-1. **App Store vs direct distribution:** App Sandbox may block `CGEventTap` (required for strict-mode input suppression) and `CGWindowListCopyWindowInfo` without explicit entitlements. Initial release will be a direct DMG download; App Store support pending entitlement audit.
-2. **Meeting detection accuracy:** Browser-based meeting detection via `AXUIElement` requires Accessibility permission, which users may deny. Fallback: manual "I'm in a meeting" toggle in tray popover — needs design.
-3. **Break customization:** Should users be able to define custom break exercises (eye rolls, palming) shown during the overlay?
-
----
-
-## 13. Success Metrics (Post-Launch)
+## 12. Success Metrics (Post-Launch)
 
 - Daily Active Users maintaining ≥ 80% break compliance rate.
 - < 1% crash rate.
