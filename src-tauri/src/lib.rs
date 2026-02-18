@@ -5,6 +5,7 @@ mod overlay;
 mod strict_mode;
 mod timer;
 mod tray;
+mod settings_window;
 
 use commands::AppState;
 use config::AppConfig;
@@ -48,26 +49,20 @@ pub fn run() {
         .manage(AppState {
             timer: Arc::clone(&timer_state),
             config: Mutex::new(config),
+            tray_menu: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
-            commands::get_timer_state,
-            commands::skip_break,
-            commands::pause_timer,
-            commands::resume_timer,
-            commands::get_config,
-            commands::save_config,
             commands::get_overlay_config,
             commands::force_skip_break,
-            commands::quit_app,
         ])
         .setup(move |app| {
             // Build the system tray.
             tray::setup_tray(app)?;
 
-            // Start the main timer loop in a background Tokio task.
+            // Start the main timer loop in a background task using Tauri's async runtime.
             let app_handle = app.handle().clone();
             let timer_ref = Arc::clone(&timer_state);
-            tokio::spawn(run_timer_loop(app_handle, timer_ref));
+            tauri::async_runtime::spawn(run_timer_loop(app_handle, timer_ref));
 
             Ok(())
         })
@@ -213,6 +208,15 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                     "pause_reason": ts.pause_reason,
                 }),
             );
+            
+            // Update native tray menu
+            let (is_strict, _) = {
+                let app_state = app.state::<AppState>();
+                let cfg = lock!(app_state.config);
+                (cfg.strict_mode, cfg.break_duration_seconds)
+            };
+            update_tray_menu(&app, ts.seconds_remaining, true, is_strict);
+
             maybe_persist(&timer, &mut persist_counter);
             continue;
         }
@@ -244,6 +248,10 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                 }),
             );
         }
+        
+        // Update native tray
+        update_tray_menu(&app, seconds_remaining, false, is_strict);
+        
         maybe_persist(&timer, &mut persist_counter);
 
         // Trigger break.
@@ -275,24 +283,6 @@ fn maybe_persist(timer: &SharedTimerState, counter: &mut u32) {
     }
 }
 
-/// Sends a system notification informing the user a break will start after the given lead time.
-///
-/// Displays a desktop notification with a human-friendly label (minutes or seconds) and logs the event.
-///
-/// # Parameters
-///
-/// - `app`: the Tauri application handle used to show the notification.
-/// - `lead_seconds`: seconds remaining until the break; used to format the notification label.
-///
-/// # Examples
-///
-/// ```no_run
-/// use tauri::AppHandle;
-///
-/// // `app` is obtained from your Tauri setup; shown here as a placeholder.
-/// let app: AppHandle = /* get AppHandle from Tauri setup */ unimplemented!();
-/// send_pre_break_notification(&app, 90); // shows "EyeBreak: Eye break in 1 minute — get ready to look away"
-/// ```
 fn send_pre_break_notification(app: &tauri::AppHandle, lead_seconds: u32) {
     let minutes = lead_seconds / 60;
     let secs = lead_seconds % 60;
@@ -317,3 +307,68 @@ fn send_pre_break_notification(app: &tauri::AppHandle, lead_seconds: u32) {
         .show();
     log::info!("Pre-break notification: break in {label}");
 }
+
+/// Updates the system tray menu items (timer label, enabled states) based on current state.
+fn update_tray_menu(
+    app: &tauri::AppHandle,
+    seconds_remaining: u32,
+    is_paused: bool,
+    is_strict_mode: bool,
+) {
+    use tauri::menu::MenuItemKind;
+    // We access the menu via AppState since TrayIcon doesn't expose it safely in v2
+    let state = app.state::<AppState>();
+    
+    // We need to lock the mutex to get the menu handle
+    // Note: The menu handle itself methods don't require lock on the menu, 
+    // but we need to get it from the Option inside Mutex.
+    // However, we can't hold the lock while updating if updating triggers something that locks? 
+    // But menu updates are usually safe.
+    // Let's scope the lock or clone the menu handle (it's a resource handle, cheap to clone).
+    
+    let menu = {
+        let guard = match state.tray_menu.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        match &*guard {
+            Some(m) => m.clone(),
+            None => return,
+        }
+    };
+
+    // Helper to format time
+    let label = if is_paused {
+        "Paused".to_string()
+    } else {
+        let m = seconds_remaining / 60;
+        let s = seconds_remaining % 60;
+        format!("Next break in {:02}:{:02}", m, s)
+    };
+
+    let items = match menu.items() {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+
+    for item in items {
+        match item {
+            MenuItemKind::MenuItem(i) => {
+                let id = i.id();
+                if id == "next_break" {
+                    let _ = i.set_text(&label);
+                } else if id == "skip" || id == "pause_30" || id == "pause_1h" {
+                    // Disable skip/pause if strict mode is on.
+                    // Also if already paused, "pause" buttons could be disabled or changed to resume,
+                    // but for now let's just respect strict mode for enabling/disabling.
+                    // Logic: If strict mode -> disabled.
+                    // If not strict mode -> enabled.
+                    // (Simplification: even if paused, we might allow clicking pause to extend, or skip to reset)
+                    let _ = i.set_enabled(!is_strict_mode);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+

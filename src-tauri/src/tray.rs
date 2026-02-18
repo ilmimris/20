@@ -1,61 +1,114 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    App, Manager, WebviewUrl, WebviewWindowBuilder,
+    App, Manager,
 };
+use crate::commands::AppState;
+use crate::timer::PauseReason;
 
-/// Initializes and attaches the application system tray with "Settings…" and "Quit EyeBreak" menu items, a separator, and left-click popover behavior.
+/// Lock a Mutex, recovering from a poisoned state gracefully.
+macro_rules! lock {
+    ($m:expr) => {
+        $m.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
+
+/// Initializes and attaches the application system tray with native menu items.
 ///
-/// The tray uses the application's default window icon, shows the constructed menu on right-click, opens the settings popover on left-click, and exits the app when "Quit EyeBreak" is selected.
-///
-/// # Errors
-///
-/// Returns `Err(tauri::Error)` if building or registering the tray/menu fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use tauri::App;
-/// # fn example(mut app: App) -> tauri::Result<()> {
-/// setup_tray(&mut app)?;
-/// # Ok(())
-/// # }
-/// ```
+/// The menu includes:
+/// - "Next break in..." (disabled, used for status)
+/// - "Skip next break"
+/// - "Pause for 30 min"
+/// - "Pause for 1 hr"
+/// - Separator
+/// - "Settings…"
+/// - "Quit EyeBreak"
 pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
-    let quit_item = MenuItem::with_id(app, "quit", "Quit EyeBreak", true, None::<&str>)?;
-    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let next_break_item = MenuItem::with_id(app, "next_break", "Next break in...", false, None::<&str>)?;
+    let skip_item = MenuItem::with_id(app, "skip", "Skip next break", true, None::<&str>)?;
+    let pause_30_item = MenuItem::with_id(app, "pause_30", "Pause for 30 min", true, None::<&str>)?;
+    let pause_1h_item = MenuItem::with_id(app, "pause_1h", "Pause for 1 hr", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit EyeBreak", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&settings_item, &separator, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &next_break_item,
+            &skip_item,
+            &pause_30_item,
+            &pause_1h_item,
+            &separator,
+            &settings_item,
+            &quit_item,
+        ],
+    )?;
+
+    {
+        let state = app.state::<AppState>();
+        *state.tray_menu.lock().unwrap() = Some(menu.clone());
+    }
 
     let icon = app
         .default_window_icon()
         .ok_or_else(|| tauri::Error::AssetNotFound("tray icon (icons/eye.png)".into()))?
         .clone();
 
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id("main")
         .icon(icon)
+        .icon_as_template(true)
         .tooltip("EyeBreak")
         .menu(&menu)
-        .show_menu_on_left_click(false) // left click opens popover
+        .show_menu_on_left_click(true) 
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
                 app.exit(0);
             }
             "settings" => {
-                open_popover(app);
+                open_settings(app);
+            }
+            "skip" => {
+                let state = app.state::<AppState>();
+                let mut ts = lock!(state.timer);
+                if !ts.is_strict_mode {
+                    ts.seconds_remaining = ts.work_interval_seconds;
+                    ts.is_paused = false;
+                    ts.pause_reason = None;
+                    log::info!("Break skipped via tray");
+                }
+            }
+            "pause_30" => {
+                let state = app.state::<AppState>();
+                let mut ts = lock!(state.timer);
+                if !ts.is_strict_mode {
+                    ts.is_paused = true;
+                    ts.pause_reason = Some(PauseReason::Manual);
+                    ts.manual_pause_seconds_remaining = Some(30 * 60);
+                    log::info!("Timer paused for 30 min via tray");
+                }
+            }
+            "pause_1h" => {
+                let state = app.state::<AppState>();
+                let mut ts = lock!(state.timer);
+                if !ts.is_strict_mode {
+                    ts.is_paused = true;
+                    ts.pause_reason = Some(PauseReason::Manual);
+                    ts.manual_pause_seconds_remaining = Some(60 * 60);
+                    log::info!("Timer paused for 1 hr via tray");
+                }
             }
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
+        .on_tray_icon_event(|_tray, event| {
+             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                open_popover(app);
+                // Native menu handles this automatically with show_menu_on_left_click(true)
+                // But we keep this listener if we need custom logic later.
             }
         })
         .build(app)?;
@@ -63,47 +116,8 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Toggles the settings popover window or creates and shows it if missing.
-///
-/// If a window with the ID "popover" already exists, hides it when visible or shows and focuses it when hidden.
-/// If no such window exists, creates a non-resizable, undecorated, always-on-top popover (280×320) that loads `index.html`,
-/// is skipped from the taskbar, and is visible on creation. Errors when building the window are logged.
-///
-/// # Examples
-///
-/// ```no_run
-/// // Obtain a tauri::AppHandle from your application context and call:
-/// // let app_handle: tauri::AppHandle = /* ... */;
-/// // open_popover(&app_handle);
-/// ```
-fn open_popover(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("popover") {
-        // Toggle: if already visible, hide it.
-        if win.is_visible().unwrap_or(false) {
-            let _ = win.hide();
-        } else {
-            let _ = win.show();
-            let _ = win.set_focus();
-        }
-        return;
-    }
-
-    // Create the popover window.
-    match WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("index.html".into()))
-        .title("EyeBreak")
-        .inner_size(280.0, 320.0)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .visible(true)
-        .build()
-    {
-        Ok(win) => {
-            let _ = win.set_focus();
-        }
-        Err(e) => {
-            log::error!("Failed to open popover: {e}");
-        }
-    }
+/// Opens the settings window, creating it if it doesn't exist.
+fn open_settings(app: &tauri::AppHandle) {
+    crate::settings_window::show_settings(app);
 }
+

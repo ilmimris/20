@@ -12,17 +12,14 @@
   "app": {
     "withGlobalTauri": true,
     "windows": [],
-    "macOSPrivateApi": true,
-    "trayIcon": {
-      "iconPath": "icons/eye.png",
-      "tooltip": "EyeBreak",
-      "iconAsTemplate": true
-    }
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": "dmg",
-    "icon": ["icons/eye.png"],
+    "icon": [
+      "icons/eye.png"
+    ],
     "category": "Productivity",
     "shortDescription": "20-20-20 Eye Care App",
     "longDescription": "Enforces the 20-20-20 rule to reduce digital eye strain. Every 20 minutes, reminds you to look 20 feet away for 20 seconds.",
@@ -32,13 +29,10 @@
       "frameworks": [],
       "minimumSystemVersion": "13.0",
       "signingIdentity": null,
-      "providerShortName": null,
-      "hardened-runtime": true
+      "providerShortName": null
     }
   },
   "plugins": {
-    "autostart": {
-      "desktop": true
-    }
+    "autostart": null
   }
 }

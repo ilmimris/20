@@ -52,17 +52,7 @@
 </script>
 
 <div class="flex flex-col h-full max-h-[500px] overflow-hidden">
-  <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80">
-    <h1 class="text-sm font-semibold text-gray-900 dark:text-white">Settings</h1>
-    <button
-      onclick={onClose}
-      class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none"
-      aria-label="Close settings"
-    >
-      ×
-    </button>
-  </div>
+  <!-- Header removed: using native window title bar -->
 
   <!-- Scrollable content -->
   <div class="flex-1 overflow-y-auto px-4 py-3 space-y-5 dark:bg-gray-900">

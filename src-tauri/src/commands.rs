@@ -3,11 +3,14 @@ use crate::strict_mode;
 use crate::timer::{PauseReason, SharedTimerState};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
+use tauri::menu::Menu;
+use tauri::Wry;
 
 /// Tauri state container.
 pub struct AppState {
     pub timer: SharedTimerState,
     pub config: std::sync::Mutex<AppConfig>,
+    pub tray_menu: std::sync::Mutex<Option<Menu<Wry>>>,
 }
 
 /// Lock a Mutex, recovering from poisoning gracefully.
