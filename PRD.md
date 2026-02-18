@@ -27,7 +27,7 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 
 - iOS / Windows / Linux support (v1.0).
 - Syncing break history across devices.
-- Integration with calendar or meeting software to pause during calls (post-v1.0).
+- Calendar integration (e.g. reading Google Calendar / iCal events).
 
 ---
 
@@ -64,8 +64,9 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 - Tray icon animates or changes color 60 seconds before an upcoming break.
 - Clicking the tray icon opens a popover with:
   - Time until next break (countdown).
-  - "Skip next break" button (logs skip, resets timer).
-  - "Pause for 30 min / 1 hr" option.
+  - Meeting status badge: "Meeting detected — paused" when a call is active.
+  - "Skip next break" button (logs skip, resets timer). Hidden in strict mode.
+  - "Pause for 30 min / 1 hr" option. Hidden in strict mode.
   - "Settings" link.
   - "Quit" option.
 
@@ -80,7 +81,12 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
   - Instruction text: *"Look at something 20 feet away"*.
   - Optional: ambient sound (soft chime or white noise) via `rodio` crate.
 - After 20 seconds the overlay closes automatically. No manual close button in strict mode.
-- **Strict mode** (user opt-in): keyboard shortcuts and mouse clicks pass through are blocked during overlay.
+- **Strict mode** (user opt-in):
+  - "Skip" and "Pause" controls are hidden from the tray popover.
+  - The overlay consumes all keyboard and mouse input — nothing passes through to underlying apps.
+  - macOS `CGEventTap` (or `NSEvent.addGlobalMonitorForEvents`) suppresses input events for the overlay duration.
+  - **Emergency escape hatch:** pressing `Escape` three times within five seconds force-closes the overlay. The break is logged as "force-skipped" with a timestamp. This requires no password — the 3-tap friction is sufficient to prevent accidents while allowing genuine emergencies.
+  - Strict mode can only be toggled in Settings between breaks, never mid-overlay.
 
 ### 4.3 Timer Engine (Rust backend)
 
@@ -102,6 +108,7 @@ Accessible from the tray popover. Stored in `~/.config/eyebreak/config.toml`.
 | Sound | Off | Off / Chime / White noise |
 | Launch at login | On | On / Off |
 | Show break notification pre-warning | On (60 sec) | Off / 30 sec / 60 sec / 2 min |
+| Meeting detection (auto-pause) | On | On / Off |
 
 ### 4.5 Notifications
 
@@ -112,6 +119,35 @@ Accessible from the tray popover. Stored in `~/.config/eyebreak/config.toml`.
 
 - Uses macOS `SMAppService` (Tauri plugin or direct Rust FFI) to register as a login item.
 - Enabled by default on first launch after user confirmation.
+
+### 4.7 Meeting Detection
+
+Automatically pauses the break timer when the user is in an active video call, then resumes once the call ends.
+
+**Detection strategy (Rust, polled every 30 seconds):**
+
+1. **Native app detection** — query `NSWorkspace.sharedWorkspace.runningApplications` for known conferencing apps:
+   - Zoom (`us.zoom.xos`)
+   - Microsoft Teams (`com.microsoft.teams2`)
+   - Webex (`Cisco-Systems.Spark`)
+   - FaceTime (`com.apple.FaceTime`)
+   - Discord (`com.hnc.Discord`) — only when in a voice/video channel (detected via window title)
+
+2. **Window title detection** — for browser-based calls (Google Meet, Teams Web), query `CGWindowListCopyWindowInfo` for browser windows whose title matches patterns: `"Meet – "`, `"Zoom Meeting"`, `"Microsoft Teams"`, `"On a call"`.
+
+3. **Microphone / camera in-use indicator** — as a fallback, check macOS privacy indicators: if the camera or microphone usage indicator is active (`IOKit` or `AXUIElement` introspection), treat the session as a meeting.
+
+**Behavior:**
+
+- When a meeting is detected: timer pauses silently; tray icon updates to show "Paused — meeting in progress"; no break overlay is shown.
+- When the meeting ends: timer resumes from where it left off (does not reset to 20 min).
+- If a break was already triggered (overlay open) when a meeting starts: overlay closes immediately and timer resets to 20 min for the next cycle.
+- Detection is local-only; no network calls are made; no meeting content is read.
+
+**Permissions required:**
+
+- Accessibility permission (`AXUIElement` for browser window titles) — requested on first run with explanation.
+- No screen recording permission needed; only window metadata (title, app bundle ID) is accessed.
 
 ---
 
@@ -126,12 +162,20 @@ Menu bar icon appears
     ▼
 20-min countdown starts ──────────────────────────────────────┐
     │                                                          │
-    │ (60 sec before break)                                    │
+    │  [meeting detected?]                                     │
+    ├──Yes──► Timer pauses; tray shows "Meeting in progress"   │
+    │         Poll every 30s; when meeting ends → resume timer─┤
+    │                                                          │
+    │ (60 sec before break, no meeting)                        │
     ▼                                                          │
 Native notification: "Break in 60 seconds"                    │
     │                                                          │
     ▼                                                          │
 Full-screen overlay appears on all displays                   │
+    │                                                          │
+    │  [strict mode ON]        [strict mode OFF]               │
+    │  Input consumed          User may skip via tray          │
+    │  Esc×3 = force-skip      or wait out the timer           │
     │                                                          │
     ▼                                                          │
 20-second countdown plays                                     │
@@ -143,10 +187,16 @@ Overlay auto-dismisses ───────────────────
 
 **Skip flow:**
 - User clicks "Skip next break" in tray popover → break is skipped → timer resets to 20 min → skip is logged.
-- In strict mode, "Skip" option is hidden.
+- In strict mode, "Skip" option is hidden; the only escape is the 3× Escape key sequence.
 
 **Pause flow:**
 - User selects "Pause for 30 min" → timer pauses → tray icon shows pause indicator → timer resumes after selected duration.
+- Not available in strict mode.
+
+**Meeting flow:**
+- Meeting detected mid-countdown → timer pauses, no overlay shown.
+- Meeting detected while overlay is open → overlay closes immediately, timer resets to 20 min.
+- Meeting ends → timer resumes from remaining time (does not restart from 20 min).
 
 ---
 
@@ -234,7 +284,9 @@ let tray = TrayIconBuilder::new()
 | `serde` / `toml` | Config serialization |
 | `tauri-plugin-autostart` | Launch at login |
 | `rodio` | Optional audio playback |
-| `objc2` / `objc2-app-kit` | macOS NSScreen / presentation options |
+| `objc2` / `objc2-app-kit` | macOS NSScreen, presentation options, NSWorkspace |
+| `core-graphics` | `CGWindowListCopyWindowInfo` for browser window titles |
+| `accessibility` (or raw `AXUIElement` via `objc2`) | Browser window title access for web-based meeting detection |
 
 ---
 
@@ -245,17 +297,18 @@ let tray = TrayIconBuilder::new()
 | M1 — Foundation | Tauri project scaffold, tray icon, settings file read/write |
 | M2 — Timer Engine | Rust countdown, persist state, sleep/wake handling |
 | M3 — Overlay | Full-screen overlay window, multi-monitor, countdown UI |
-| M4 — Polish | Notifications, strict mode, animations, sound, accessibility |
-| M5 — Distribution | DMG packaging, code signing, notarization, launch at login |
+| M4 — Strict Mode | Input consumption via `CGEventTap`, 3× Escape escape hatch, force-skip logging |
+| M5 — Meeting Detection | NSWorkspace app polling, CGWindowList title matching, mic/camera fallback, auto-pause/resume |
+| M6 — Polish | Notifications, animations, sound, accessibility |
+| M7 — Distribution | DMG packaging, code signing, notarization, launch at login |
 
 ---
 
 ## 12. Open Questions
 
-1. **Strict mode UX:** Should strict mode require a password to disable, or is a 3-click confirmation sufficient to prevent accidental disabling?
-2. **Meeting detection:** Should v1.1 detect active video calls (Zoom, Teams, Meet) and auto-pause to avoid interrupting meetings?
-3. **App Store vs direct distribution:** App Store sandboxing may limit `always_on_top` overlay behavior; needs validation.
-4. **Break customization:** Should users be able to define custom break exercises (eye rolls, palming) shown during the overlay?
+1. **App Store vs direct distribution:** App Sandbox may block `CGEventTap` (required for strict-mode input suppression) and `CGWindowListCopyWindowInfo` without explicit entitlements. Initial release will be a direct DMG download; App Store support pending entitlement audit.
+2. **Meeting detection accuracy:** Browser-based meeting detection via `AXUIElement` requires Accessibility permission, which users may deny. Define fallback UX when permission is denied (e.g., manual "I'm in a meeting" toggle in tray popover).
+3. **Break customization:** Should users be able to define custom break exercises (eye rolls, palming) shown during the overlay?
 
 ---
 
