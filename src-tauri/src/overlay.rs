@@ -27,8 +27,8 @@ pub struct OverlayConfig {
 /// open_overlays(app, 300, true);
 /// ```
 pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
-    let app = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    let app_handle = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
         {
             use objc2_app_kit::NSScreen;
@@ -38,7 +38,7 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
             let screens = NSScreen::screens(mtm);
             let screen_count = screens.count();
             for i in 0..screen_count {
-                open_overlay_window(&app, i, screen_count, break_duration, strict_mode);
+                open_overlay_window(&app_handle, i, screen_count, break_duration, strict_mode);
             }
             // Set presentation options once after all windows are built.
             set_presentation_options_for_overlay();
@@ -46,7 +46,7 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
 
         #[cfg(not(target_os = "macos"))]
         {
-            open_overlay_window(&app, 0, 1, break_duration, strict_mode);
+            open_overlay_window(&app_handle, 0, 1, break_duration, strict_mode);
         }
     });
 }
@@ -126,8 +126,8 @@ fn open_overlay_window(
 /// close_overlays(&app);
 /// ```
 pub fn close_overlays(app: &AppHandle) {
-    let app = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    let app_handle = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
         {
             use objc2_app_kit::NSScreen;
@@ -136,7 +136,7 @@ pub fn close_overlays(app: &AppHandle) {
             let count = NSScreen::screens(mtm).count();
             for i in 0..count {
                 let label = format!("overlay_{i}");
-                if let Some(win) = app.get_webview_window(&label) {
+                if let Some(win) = app_handle.get_webview_window(&label) {
                     let _ = win.close();
                 }
             }
@@ -145,7 +145,7 @@ pub fn close_overlays(app: &AppHandle) {
 
         #[cfg(not(target_os = "macos"))]
         {
-            if let Some(win) = app.get_webview_window("overlay_0") {
+            if let Some(win) = app_handle.get_webview_window("overlay_0") {
                 let _ = win.close();
             }
         }
