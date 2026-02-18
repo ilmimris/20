@@ -2,6 +2,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 pub struct OverlayConfig {
     pub break_duration: u32,
     pub is_primary: bool,
@@ -29,16 +30,12 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::NSScreen;
-        let screens = unsafe { NSScreen::screens() };
-        let screen_count = unsafe { screens.count() };
+        use objc2_foundation::MainThreadMarker;
+        let mtm = MainThreadMarker::new().expect("must run on main thread");
+        let screens = NSScreen::screens(mtm);
+        let screen_count = screens.count();
         for i in 0..screen_count {
-            open_overlay_window(
-                app,
-                i as usize,
-                screen_count as usize,
-                break_duration,
-                strict_mode,
-            );
+            open_overlay_window(app, i, screen_count, break_duration, strict_mode);
         }
         // Set presentation options once after all windows are built.
         set_presentation_options_for_overlay();
@@ -94,7 +91,7 @@ fn open_overlay_window(
         .decorations(false)
         .transparent(true)
         .visible(true)
-        .initialization_script(&format!(
+        .initialization_script(format!(
             r#"
             window.__EYEBREAK_OVERLAY_CONFIG__ = {{
                 breakDuration: {break_duration},
@@ -128,7 +125,9 @@ pub fn close_overlays(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::NSScreen;
-        let count = unsafe { NSScreen::screens().count() };
+        use objc2_foundation::MainThreadMarker;
+        let mtm = MainThreadMarker::new().expect("must run on main thread");
+        let count = NSScreen::screens(mtm).count();
         for i in 0..count {
             let label = format!("overlay_{i}");
             if let Some(win) = app.get_webview_window(&label) {
@@ -181,14 +180,14 @@ pub fn emit_break_tick(app: &AppHandle, seconds_remaining: u32) {
 #[cfg(target_os = "macos")]
 fn set_presentation_options_for_overlay() {
     use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
-    unsafe {
-        let app = NSApplication::sharedApplication();
-        app.setPresentationOptions(
-            NSApplicationPresentationOptions::NSApplicationPresentationHideMenuBar
-                | NSApplicationPresentationOptions::NSApplicationPresentationHideDock
-                | NSApplicationPresentationOptions::NSApplicationPresentationDisableAppleMenu,
-        );
-    }
+    use objc2_foundation::MainThreadMarker;
+    let mtm = MainThreadMarker::new().expect("must run on main thread");
+    let app = NSApplication::sharedApplication(mtm);
+    app.setPresentationOptions(
+        NSApplicationPresentationOptions::HideMenuBar
+            | NSApplicationPresentationOptions::HideDock
+            | NSApplicationPresentationOptions::DisableAppleMenu,
+    );
 }
 
 /// Restore macOS presentation options to the system default.
@@ -205,10 +204,8 @@ fn set_presentation_options_for_overlay() {
 #[cfg(target_os = "macos")]
 fn restore_presentation_options() {
     use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
-    unsafe {
-        let app = NSApplication::sharedApplication();
-        app.setPresentationOptions(
-            NSApplicationPresentationOptions::NSApplicationPresentationDefault,
-        );
-    }
+    use objc2_foundation::MainThreadMarker;
+    let mtm = MainThreadMarker::new().expect("must run on main thread");
+    let app = NSApplication::sharedApplication(mtm);
+    app.setPresentationOptions(NSApplicationPresentationOptions::Default);
 }

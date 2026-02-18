@@ -2,11 +2,9 @@
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// // src-tauri/build.rs
-/// fn main() {
-///     tauri_build::build();
-/// }
+/// tauri_build::build();
 /// ```
 fn main() {
     tauri_build::build()

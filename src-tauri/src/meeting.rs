@@ -4,10 +4,8 @@
 ///   1. Native app bundle IDs via NSWorkspace.
 ///   2. Window title matching via `lsappinfo` / AppleScript (requires Accessibility).
 ///   3. Camera/microphone in-use indicator (best-effort, MVP stub).
-
 #[cfg(target_os = "macos")]
 mod macos {
-    use objc2_app_kit::NSWorkspace;
 
     /// Bundle IDs for known native conferencing apps.
     const CONFERENCING_BUNDLE_IDS: &[&str] = &[
@@ -44,15 +42,15 @@ mod macos {
     /// println!("Native conferencing app running: {}", active);
     /// ```
     pub fn is_native_conferencing_app_running() -> bool {
-        unsafe {
-            let workspace = NSWorkspace::sharedWorkspace();
-            let apps = workspace.runningApplications();
-            for app in apps.iter() {
-                if let Some(bundle_id) = app.bundleIdentifier() {
-                    let s = bundle_id.to_string();
-                    if CONFERENCING_BUNDLE_IDS.contains(&s.as_str()) && !app.isHidden() {
-                        return true;
-                    }
+        use objc2_app_kit::NSWorkspace;
+
+        let workspace = NSWorkspace::sharedWorkspace();
+        let apps = workspace.runningApplications();
+        for app in apps.iter() {
+            if let Some(bundle_id) = app.bundleIdentifier() {
+                let s = bundle_id.to_string();
+                if CONFERENCING_BUNDLE_IDS.contains(&s.as_str()) && !app.isHidden() {
+                    return true;
                 }
             }
         }

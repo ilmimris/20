@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::strict_mode;
 use crate::timer::{PauseReason, SharedTimerState};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 /// Tauri state container.
 pub struct AppState {
@@ -145,6 +145,7 @@ pub fn resume_timer(state: State<AppState>) -> Result<(), String> {
 /// let json = crate::commands::get_config(state);
 /// assert!(json.is_object() || json.is_null());
 /// ```
+#[tauri::command]
 pub fn get_config(state: State<AppState>) -> Value {
     let config = lock!(state.config);
     serde_json::to_value(&*config).unwrap_or_default()

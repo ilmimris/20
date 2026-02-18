@@ -29,10 +29,8 @@ macro_rules! lock {
 /// # Examples
 ///
 /// ```no_run
-/// fn main() {
-///     // Starts the EyeBreak Tauri application; this call does not return until the app exits.
-///     run();
-/// }
+/// // Starts the EyeBreak Tauri application; this call does not return until the app exits.
+/// eyebreak_lib::run();
 /// ```
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

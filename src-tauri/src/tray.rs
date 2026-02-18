@@ -37,7 +37,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         .icon(icon)
         .tooltip("EyeBreak")
         .menu(&menu)
-        .menu_on_left_click(false) // left click opens popover
+        .show_menu_on_left_click(false) // left click opens popover
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
                 app.exit(0);
