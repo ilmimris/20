@@ -54,7 +54,7 @@ pub fn open_overlays(app: &AppHandle, break_duration: u32, strict_mode: bool) {
 /// Create and open a fullscreen overlay webview for a specific display index.
 ///
 /// The created window loads `overlay.html` and receives an initialization script that sets
-/// `window.__EYEBREAK_OVERLAY_CONFIG__` with the fields `breakDuration`, `isPrimary`, and
+/// `window.__TWENTY20_OVERLAY_CONFIG__` with the fields `breakDuration`, `isPrimary`, and
 /// `isStrictMode`.
 ///
 /// `index` selects which display the overlay targets; an overlay with `index == 0` is treated
@@ -97,7 +97,7 @@ fn open_overlay_window(
         .visible(true)
         .initialization_script(format!(
             r#"
-            window.__EYEBREAK_OVERLAY_CONFIG__ = {{
+            window.__TWENTY20_OVERLAY_CONFIG__ = {{
                 breakDuration: {break_duration},
                 isPrimary: {is_primary},
                 isStrictMode: {strict_mode},

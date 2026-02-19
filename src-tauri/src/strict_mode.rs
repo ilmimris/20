@@ -242,7 +242,7 @@ mod tap {
 /// Record a user-initiated force-skip and persist it to a local skip log.
 ///
 /// Writes a warning to the application log and appends a timestamped `force-skip` entry
-/// to `eyebreak/skip_log.txt` inside the user's local data directory. If the local data
+/// to `twenty20/skip_log.txt` inside the user's local data directory. If the local data
 /// directory cannot be determined, the file is created relative to the current working directory.
 ///
 /// # Examples
@@ -257,7 +257,7 @@ pub fn log_force_skip() {
     log::warn!("Break force-skipped via 3× Escape at {timestamp}");
 
     let mut path = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    path.push("eyebreak");
+    path.push("twenty20");
     path.push("skip_log.txt");
 
     if let Some(parent) = path.parent() {

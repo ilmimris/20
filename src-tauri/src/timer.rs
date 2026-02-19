@@ -68,17 +68,17 @@ impl PersistedTimer {
     /// Builds the filesystem path for the timer state JSON file.
     ///
     /// Uses the platform-specific data-local directory when available; otherwise falls back to the current directory.
-    /// The resulting path ends with `eyebreak/timer_state.json`.
+    /// The resulting path ends with `twenty20/timer_state.json`.
     ///
     /// # Examples
     ///
     /// ```
     /// let p = path();
-    /// assert!(p.ends_with(std::path::Path::new("eyebreak/timer_state.json")));
+    /// assert!(p.ends_with(std::path::Path::new("twenty20/timer_state.json")));
     /// ```
     fn path() -> PathBuf {
         let mut p = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-        p.push("eyebreak");
+        p.push("twenty20");
         p.push("timer_state.json");
         p
     }

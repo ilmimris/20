@@ -61,8 +61,8 @@ impl Default for AppConfig {
 impl AppConfig {
     /// Constructs the filesystem path to the application's configuration file.
     ///
-    /// The path points to "<user_config_dir>/eyebreak/config.toml" when a user config
-    /// directory is available; otherwise it falls back to "./eyebreak/config.toml".
+    /// The path points to "<user_config_dir>/twenty20/config.toml" when a user config
+    /// directory is available; otherwise it falls back to "./twenty20/config.toml".
     ///
     /// # Examples
     ///
@@ -70,11 +70,11 @@ impl AppConfig {
     /// let p = config_path();
     /// assert_eq!(p.file_name().and_then(|s| s.to_str()), Some("config.toml"));
     /// let parent = p.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
-    /// assert_eq!(parent, Some("eyebreak"));
+    /// assert_eq!(parent, Some("twenty20"));
     /// ```
     pub fn config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("eyebreak");
+        path.push("twenty20");
         path.push("config.toml");
         path
     }

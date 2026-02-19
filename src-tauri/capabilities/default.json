@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema/capabilities/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for EyeBreak",
+  "description": "Default permissions for Twenty20",
   "platforms": ["macOS"],
   "windows": ["popover", "overlay_*"],
   "permissions": [

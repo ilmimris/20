@@ -12,7 +12,7 @@
 
   onMount(async () => {
     // Primary source: initialization script injected by Rust before page load.
-    const injected = window.__EYEBREAK_OVERLAY_CONFIG__;
+    const injected = window.__TWENTY20_OVERLAY_CONFIG__;
     if (injected) {
       initialBreakDuration = injected.breakDuration ?? 20;
       secondsLeft = injected.breakDuration ?? 20;
@@ -175,7 +175,7 @@
   {:else}
     <!-- Secondary display: just the dim overlay with a subtle label -->
     <div class="text-white/40 text-xl font-light tracking-widest uppercase">
-      EyeBreak
+      Twenty20
     </div>
   {/if}
 </div>
