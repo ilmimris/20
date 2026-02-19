@@ -49,3 +49,10 @@ pub fn force_skip_break(app: AppHandle, state: State<AppState>) -> Result<(), St
     let _ = app.emit("break:end", serde_json::json!({ "force_skipped": true }));
     Ok(())
 }
+
+#[tauri::command]
+pub fn test_sound(app: AppHandle) -> Result<(), String> {
+    log::info!("Manual sound test triggered");
+    crate::audio::play_break_sound(&app);
+    Ok(())
+}

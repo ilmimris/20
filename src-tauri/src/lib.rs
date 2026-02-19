@@ -1,3 +1,4 @@
+mod audio;
 mod commands;
 mod config;
 mod meeting;
@@ -54,6 +55,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_overlay_config,
             commands::force_skip_break,
+            commands::test_sound,
         ])
         .setup(move |app| {
             // Build the system tray.
@@ -265,6 +267,7 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
             }
 
             overlay::open_overlays(&app, config_break_dur, is_strict);
+            audio::play_break_sound(&app);
             let _ = app.emit(
                 "break:start",
                 serde_json::json!({ "duration": config_break_dur }),
