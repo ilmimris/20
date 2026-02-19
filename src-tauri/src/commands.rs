@@ -2,9 +2,9 @@ use crate::config::AppConfig;
 use crate::strict_mode;
 use crate::timer::SharedTimerState;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
 use tauri::menu::Menu;
 use tauri::Wry;
+use tauri::{AppHandle, Emitter, State};
 
 /// Tauri state container.
 pub struct AppState {

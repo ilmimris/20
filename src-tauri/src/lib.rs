@@ -3,10 +3,10 @@ mod commands;
 mod config;
 mod meeting;
 mod overlay;
+mod settings_window;
 mod strict_mode;
 mod timer;
 mod tray;
-mod settings_window;
 
 use commands::AppState;
 use config::AppConfig;
@@ -210,7 +210,7 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                     "pause_reason": ts.pause_reason,
                 }),
             );
-            
+
             // Update native tray menu
             let (is_strict, _) = {
                 let app_state = app.state::<AppState>();
@@ -250,10 +250,10 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                 }),
             );
         }
-        
+
         // Update native tray
         update_tray_menu(&app, seconds_remaining, false, is_strict);
-        
+
         maybe_persist(&timer, &mut persist_counter);
 
         // Trigger break.
@@ -321,14 +321,14 @@ fn update_tray_menu(
     use tauri::menu::MenuItemKind;
     // We access the menu via AppState since TrayIcon doesn't expose it safely in v2
     let state = app.state::<AppState>();
-    
+
     // We need to lock the mutex to get the menu handle
-    // Note: The menu handle itself methods don't require lock on the menu, 
+    // Note: The menu handle itself methods don't require lock on the menu,
     // but we need to get it from the Option inside Mutex.
-    // However, we can't hold the lock while updating if updating triggers something that locks? 
+    // However, we can't hold the lock while updating if updating triggers something that locks?
     // But menu updates are usually safe.
     // Let's scope the lock or clone the menu handle (it's a resource handle, cheap to clone).
-    
+
     let menu = {
         let guard = match state.tray_menu.lock() {
             Ok(g) => g,
@@ -355,23 +355,19 @@ fn update_tray_menu(
     };
 
     for item in items {
-        match item {
-            MenuItemKind::MenuItem(i) => {
-                let id = i.id();
-                if id == "next_break" {
-                    let _ = i.set_text(&label);
-                } else if id == "skip" || id == "pause_30" || id == "pause_1h" {
-                    // Disable skip/pause if strict mode is on.
-                    // Also if already paused, "pause" buttons could be disabled or changed to resume,
-                    // but for now let's just respect strict mode for enabling/disabling.
-                    // Logic: If strict mode -> disabled.
-                    // If not strict mode -> enabled.
-                    // (Simplification: even if paused, we might allow clicking pause to extend, or skip to reset)
-                    let _ = i.set_enabled(!is_strict_mode);
-                }
+        if let MenuItemKind::MenuItem(i) = item {
+            let id = i.id();
+            if id == "next_break" {
+                let _ = i.set_text(&label);
+            } else if id == "skip" || id == "pause_30" || id == "pause_1h" {
+                // Disable skip/pause if strict mode is on.
+                // Also if already paused, "pause" buttons could be disabled or changed to resume,
+                // but for now let's just respect strict mode for enabling/disabling.
+                // Logic: If strict mode -> disabled.
+                // If not strict mode -> enabled.
+                // (Simplification: even if paused, we might allow clicking pause to extend, or skip to reset)
+                let _ = i.set_enabled(!is_strict_mode);
             }
-            _ => {}
         }
     }
 }
-

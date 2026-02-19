@@ -1,10 +1,10 @@
+use crate::commands::AppState;
+use crate::timer::PauseReason;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, Manager,
 };
-use crate::commands::AppState;
-use crate::timer::PauseReason;
 
 /// Lock a Mutex, recovering from a poisoned state gracefully.
 macro_rules! lock {
@@ -24,7 +24,8 @@ macro_rules! lock {
 /// - "Settings…"
 /// - "Quit EyeBreak"
 pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
-    let next_break_item = MenuItem::with_id(app, "next_break", "Next break in...", false, None::<&str>)?;
+    let next_break_item =
+        MenuItem::with_id(app, "next_break", "Next break in...", false, None::<&str>)?;
     let skip_item = MenuItem::with_id(app, "skip", "Skip next break", true, None::<&str>)?;
     let pause_30_item = MenuItem::with_id(app, "pause_30", "Pause for 30 min", true, None::<&str>)?;
     let pause_1h_item = MenuItem::with_id(app, "pause_1h", "Pause for 1 hr", true, None::<&str>)?;
@@ -60,7 +61,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         .icon_as_template(true)
         .tooltip("EyeBreak")
         .menu(&menu)
-        .show_menu_on_left_click(true) 
+        .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
                 app.exit(0);
@@ -101,7 +102,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|_tray, event| {
-             if let TrayIconEvent::Click {
+            if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
@@ -120,4 +121,3 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
 fn open_settings(app: &tauri::AppHandle) {
     crate::settings_window::show_settings(app);
 }
-

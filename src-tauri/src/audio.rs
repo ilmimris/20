@@ -1,9 +1,9 @@
-use std::sync::Mutex;
+use crate::commands::AppState;
+use objc2::rc::Retained;
 use objc2_app_kit::NSSound;
 use objc2_foundation::{MainThreadMarker, NSString};
-use objc2::rc::Retained;
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
-use crate::commands::AppState;
 
 #[allow(dead_code)]
 struct SoundWrapper(Retained<NSSound>);
@@ -35,7 +35,7 @@ pub fn play_break_sound(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || {
         let _mtm = MainThreadMarker::new().expect("must run on main thread");
         let name_str = NSString::from_str(system_sound);
-        
+
         let sound = NSSound::soundNamed(&name_str);
         if let Some(s) = sound {
             s.play();
