@@ -22,7 +22,7 @@ macro_rules! lock {
 /// - "Pause for 1 hr"
 /// - Separator
 /// - "Settings…"
-/// - "Quit EyeBreak"
+/// - "Quit Twenty20"
 pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     let next_break_item =
         MenuItem::with_id(app, "next_break", "Next break in...", false, None::<&str>)?;
@@ -31,7 +31,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     let pause_1h_item = MenuItem::with_id(app, "pause_1h", "Pause for 1 hr", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit EyeBreak", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Twenty20", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
@@ -59,7 +59,7 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main")
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("EyeBreak")
+        .tooltip("Twenty20")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {

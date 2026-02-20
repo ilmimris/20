@@ -41,7 +41,7 @@ fn create_settings_delegate(_mtm: MainThreadMarker) -> Retained<NSObject> {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| {
         let superclass = NSObject::class();
-        let name = c"EyeBreakSettingsDelegate";
+        let name = c"Twenty20SettingsDelegate";
         let mut builder =
             ClassBuilder::new(name, superclass).expect("failed to create class builder");
 
@@ -52,7 +52,7 @@ fn create_settings_delegate(_mtm: MainThreadMarker) -> Retained<NSObject> {
         builder.register();
     });
 
-    let name = c"EyeBreakSettingsDelegate";
+    let name = c"Twenty20SettingsDelegate";
     let cls = AnyClass::get(name).expect("class not registered");
     let obj: Option<Retained<NSObject>> = unsafe { msg_send![cls, new] };
     obj.expect("failed to create delegate")
@@ -199,7 +199,7 @@ pub fn show_settings(app: &AppHandle) {
         false,
     );
 
-    panel.setTitle(&NSString::from_str("EyeBreak Settings"));
+    panel.setTitle(&NSString::from_str("Twenty20 Settings"));
     unsafe {
         panel.setReleasedWhenClosed(false);
     }

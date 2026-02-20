@@ -26,13 +26,13 @@ macro_rules! lock {
 /// This function loads the application configuration, restores or creates the persistent timer
 /// state, registers application-wide state and plugins (autostart and notifications), wires the
 /// command invoke handlers, sets up the system tray, spawns the background timer loop, and starts
-/// the Tauri event loop that runs the EyeBreak application.
+/// the Tauri event loop that runs the Twenty20 application.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// // Starts the EyeBreak Tauri application; this call does not return until the app exits.
-/// eyebreak_lib::run();
+/// // Starts the Twenty20 Tauri application; this call does not return until the app exits.
+/// twenty20_lib::run();
 /// ```
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -68,8 +68,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running EyeBreak");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                api.prevent_exit();
+            }
+            _ => {}
+        });
 }
 
 /// Runs the main timer loop that drives work/break countdowns, emits UI events, manages overlays and strict input suppression, and polls for meetings.
@@ -305,7 +311,7 @@ fn send_pre_break_notification(app: &tauri::AppHandle, lead_seconds: u32) {
     let _ = app
         .notification()
         .builder()
-        .title("EyeBreak")
+        .title("Twenty20")
         .body(format!("Eye break in {label} — get ready to look away"))
         .show();
     log::info!("Pre-break notification: break in {label}");

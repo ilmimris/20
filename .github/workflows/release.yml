@@ -88,14 +88,14 @@ jobs:
         with:
           files: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-          name: EyeBreak ${{ github.ref_name }}
+          name: Twenty20 ${{ github.ref_name }}
           body: |
-            ## EyeBreak ${{ github.ref_name }}
+            ## Twenty20 ${{ github.ref_name }}
 
             ### Installation
             1. Download the `.dmg` file below
-            2. Open the DMG and drag EyeBreak to your Applications folder
-            3. Launch EyeBreak — it will appear in your menu bar
+            2. Open the DMG and drag Twenty20 to your Applications folder
+            3. Launch Twenty20 — it will appear in your menu bar
 
             ### What's New
             See [CHANGELOG.md](CHANGELOG.md) for details.

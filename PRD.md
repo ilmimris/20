@@ -1,4 +1,4 @@
-# Product Requirements Document: EyeBreak — 20-20-20 Eye Care App for macOS
+# Product Requirements Document: Twenty20 — 20-20-20 Eye Care App for macOS
 
 **Version:** 1.0
 **Date:** 2026-02-18
@@ -10,7 +10,7 @@
 
 ### 1.1 Product Summary
 
-EyeBreak is a macOS menu bar app built with Tauri that enforces the **20-20-20 rule** to reduce digital eye strain. Every 20 minutes, it overlays the screen with a full-screen break prompt, instructing the user to look at something 20 feet away for 20 seconds. After the 20-second break completes, the overlay dismisses automatically and the next cycle begins.
+Twenty20 is a macOS menu bar app built with Tauri that enforces the **20-20-20 rule** to reduce digital eye strain. Every 20 minutes, it overlays the screen with a full-screen break prompt, instructing the user to look at something 20 feet away for 20 seconds. After the 20-second break completes, the overlay dismisses automatically and the next cycle begins.
 
 ### 1.2 Problem Statement
 
@@ -100,7 +100,7 @@ Prolonged screen use causes Computer Vision Syndrome (CVS), including eye fatigu
 
 ### 4.4 Settings
 
-Accessible from the tray popover. Stored in `~/.config/eyebreak/config.toml`.
+Accessible from the tray popover. Stored in `~/.config/twenty20/config.toml`.
 
 | Setting | Default | Options |
 |---|---|---|
@@ -252,7 +252,7 @@ Overlay auto-dismisses ───────────────────
     "windows": [],
     "trayIcon": {
       "iconPath": "icons/eye.png",
-      "tooltip": "EyeBreak"
+      "tooltip": "Twenty20"
     }
   }
 }
