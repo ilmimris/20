@@ -1,6 +1,7 @@
 use crate::commands::AppState;
 use crate::timer::PauseReason;
 use tauri::{
+    Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, Manager,
@@ -120,4 +121,33 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
 /// Opens the settings window, creating it if it doesn't exist.
 fn open_settings(app: &tauri::AppHandle) {
     crate::settings_window::show_settings(app);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TrayIconState {
+    Open,
+    Blink,
+    Rest,
+}
+
+pub fn update_icon(app: &tauri::AppHandle, state: TrayIconState) {
+    let icon_name = match state {
+        TrayIconState::Open => "eye_open.svg",
+        TrayIconState::Blink => "eye_blink.svg",
+        TrayIconState::Rest => "eye_rest.svg",
+    };
+
+    // Load from relative path to src-tauri
+    let icon_path = std::path::Path::new("icons").join(icon_name);
+    
+    // In a real build, these assets are bundled. For now, we try to load them.
+    // If loading fails, we log and skip to prevent crash.
+    match Image::from_path(icon_path) {
+        Ok(img) => {
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_icon(Some(img));
+            }
+        }
+        Err(e) => log::warn!("Failed to load tray icon {}: {}", icon_name, e),
+    }
 }

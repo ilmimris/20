@@ -108,6 +108,7 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
     let mut notified_pre_warning = false;
     // Throttle disk persistence: only write every 30 ticks (≈ 30 s).
     let mut persist_counter: u32 = 0;
+    tray::update_icon(&app, tray::TrayIconState::Open);
 
     loop {
         sleep(Duration::from_secs(1)).await;
@@ -178,6 +179,8 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                 ts.pause_reason = None;
                 timer::persist_state(&ts);
                 log::info!("Break complete — restarting work timer");
+                tray::update_icon(&app, tray::TrayIconState::Open);
+                tray::update_icon(&app, tray::TrayIconState::Open);
             } else {
                 overlay::emit_break_tick(&app, break_seconds_left);
             }
@@ -242,6 +245,8 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
         if !notified_pre_warning && pre_warning_secs > 0 && seconds_remaining == pre_warning_secs {
             notified_pre_warning = true;
             send_pre_break_notification(&app, pre_warning_secs);
+            tray::update_icon(&app, tray::TrayIconState::Blink);
+            tray::update_icon(&app, tray::TrayIconState::Blink);
         }
 
         // Emit tick.
@@ -274,6 +279,8 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
 
             overlay::open_overlays(&app, config_break_dur, is_strict);
             audio::play_break_sound(&app);
+            tray::update_icon(&app, tray::TrayIconState::Rest);
+            tray::update_icon(&app, tray::TrayIconState::Rest);
             let _ = app.emit(
                 "break:start",
                 serde_json::json!({ "duration": config_break_dur }),
