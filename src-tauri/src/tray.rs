@@ -1,7 +1,7 @@
 use crate::commands::AppState;
 use crate::timer::PauseReason;
 use tauri::{
-    Image,
+    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, Manager,
@@ -52,10 +52,9 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         *state.tray_menu.lock().unwrap() = Some(menu.clone());
     }
 
-    let icon = app
-        .default_window_icon()
-        .ok_or_else(|| tauri::Error::AssetNotFound("tray icon (icons/eye.png)".into()))?
-        .clone();
+    let icon_bytes = include_bytes!("../icons/eye_openTemplate.png");
+    let icon = Image::from_bytes(icon_bytes)
+        .unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
@@ -65,7 +64,12 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
-                app.exit(0);
+                // Ensure timer state is saved before quitting.
+                let state = app.state::<AppState>();
+                let ts = state.timer.lock().unwrap();
+                crate::timer::persist_state(&ts);
+                
+                std::process::exit(0);
             }
             "settings" => {
                 open_settings(app);
@@ -131,23 +135,18 @@ pub enum TrayIconState {
 }
 
 pub fn update_icon(app: &tauri::AppHandle, state: TrayIconState) {
-    let icon_name = match state {
-        TrayIconState::Open => "eye_open.svg",
-        TrayIconState::Blink => "eye_blink.svg",
-        TrayIconState::Rest => "eye_rest.svg",
+    let icon_bytes = match state {
+        TrayIconState::Open => include_bytes!("../icons/eye_openTemplate.png").as_slice(),
+        TrayIconState::Blink => include_bytes!("../icons/eye_blinkTemplate.png").as_slice(),
+        TrayIconState::Rest => include_bytes!("../icons/eye_restTemplate.png").as_slice(),
     };
 
-    // Load from relative path to src-tauri
-    let icon_path = std::path::Path::new("icons").join(icon_name);
-    
-    // In a real build, these assets are bundled. For now, we try to load them.
-    // If loading fails, we log and skip to prevent crash.
-    match Image::from_path(icon_path) {
+    match Image::from_bytes(icon_bytes) {
         Ok(img) => {
             if let Some(tray) = app.tray_by_id("main") {
                 let _ = tray.set_icon(Some(img));
             }
         }
-        Err(e) => log::warn!("Failed to load tray icon {}: {}", icon_name, e),
+        Err(e) => log::warn!("Failed to load tray icon: {}", e),
     }
 }

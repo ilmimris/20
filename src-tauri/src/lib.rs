@@ -58,6 +58,9 @@ pub fn run() {
             commands::test_sound,
         ])
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Build the system tray.
             tray::setup_tray(app)?;
 
