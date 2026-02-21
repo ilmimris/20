@@ -4,6 +4,7 @@ mod config;
 mod meeting;
 mod overlay;
 mod settings_window;
+mod sleep_watch;
 mod strict_mode;
 mod timer;
 mod tray;
@@ -64,10 +65,14 @@ pub fn run() {
             // Build the system tray.
             tray::setup_tray(app)?;
 
+            // Wire sleep/wake awareness: bridge IOKit notifications into the timer loop.
+            let (sleep_tx, sleep_rx) = tokio::sync::watch::channel::<bool>(false);
+            sleep_watch::setup(sleep_tx);
+
             // Start the main timer loop in a background task using Tauri's async runtime.
             let app_handle = app.handle().clone();
             let timer_ref = Arc::clone(&timer_state);
-            tauri::async_runtime::spawn(run_timer_loop(app_handle, timer_ref));
+            tauri::async_runtime::spawn(run_timer_loop(app_handle, timer_ref, sleep_rx));
 
             Ok(())
         })
@@ -103,7 +108,11 @@ pub fn run() {
 /// # // `app` and `timer` are provided by the application environment.
 /// // spawn(async move { run_timer_loop(app, timer).await });
 /// ```
-async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
+async fn run_timer_loop(
+    app: tauri::AppHandle,
+    timer: SharedTimerState,
+    sleep_rx: tokio::sync::watch::Receiver<bool>,
+) {
     use std::time::Duration;
     use tokio::time::sleep;
 
@@ -114,10 +123,59 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
     let mut notified_pre_warning = false;
     // Throttle disk persistence: only write every 30 ticks (≈ 30 s).
     let mut persist_counter: u32 = 0;
+    // Track sleep state to detect transitions.
+    let mut was_sleeping = false;
     tray::update_icon(&app, tray::TrayIconState::Open);
 
     loop {
         sleep(Duration::from_secs(1)).await;
+
+        // --- Sleep/wake awareness (checked at the top of every tick) ---
+        let is_sleeping = *sleep_rx.borrow();
+
+        if !was_sleeping && is_sleeping {
+            // Transition: awake → sleeping.
+            overlay::close_overlays(&app);
+            strict_mode::disable_strict_input_suppression();
+            break_active = false;
+            notified_pre_warning = false;
+            log::info!("System sleeping — timer loop suspended");
+            was_sleeping = true;
+            continue;
+        }
+
+        if was_sleeping && !is_sleeping {
+            // Transition: sleeping → awake — reset work timer to a fresh cycle.
+            {
+                let mut ts = lock!(timer);
+                ts.seconds_remaining = ts.work_interval_seconds;
+                ts.is_paused = false;
+                ts.pause_reason = None;
+                ts.manual_pause_seconds_remaining = None;
+                timer::persist_state(&ts);
+            }
+            tray::update_icon(&app, tray::TrayIconState::Open);
+            {
+                let ts = lock!(timer);
+                let _ = app.emit(
+                    "timer:tick",
+                    serde_json::json!({
+                        "seconds_remaining": ts.seconds_remaining,
+                        "is_paused": false,
+                        "pause_reason": null,
+                    }),
+                );
+            }
+            meeting_poll_counter = 0;
+            log::info!("System woke — timer reset to full cycle");
+            was_sleeping = false;
+            continue;
+        }
+
+        if is_sleeping {
+            // Mid-sleep tick (was_sleeping == true, is_sleeping == true).
+            continue;
+        }
 
         let (config_interval, config_break_dur, is_strict, meeting_detection, pre_warning_secs) = {
             let app_state = app.state::<AppState>();
