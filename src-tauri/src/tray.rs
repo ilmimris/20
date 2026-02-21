@@ -1,6 +1,7 @@
 use crate::commands::AppState;
 use crate::timer::PauseReason;
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, Manager,
@@ -51,19 +52,25 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
         *state.tray_menu.lock().unwrap() = Some(menu.clone());
     }
 
-    let icon = app
-        .default_window_icon()
-        .ok_or_else(|| tauri::Error::AssetNotFound("tray icon (icons/eye.png)".into()))?
-        .clone();
+    let icon_bytes = include_bytes!("../icons/eye_openTemplate.png");
+    let icon = Image::from_bytes(icon_bytes).unwrap_or_else(|e| {
+        log::warn!("Failed to load embedded tray icon: {e}; falling back to default window icon");
+        app.default_window_icon()
+            .cloned()
+            .expect("No default window icon configured as fallback for tray icon")
+    });
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .icon_as_template(true)
         .tooltip("Twenty20")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => {
+                // Ensure timer state is saved before quitting.
+                let state = app.state::<AppState>();
+                let ts = lock!(state.timer);
+                crate::timer::persist_state(&ts);
                 app.exit(0);
             }
             "settings" => {
@@ -120,4 +127,28 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
 /// Opens the settings window, creating it if it doesn't exist.
 fn open_settings(app: &tauri::AppHandle) {
     crate::settings_window::show_settings(app);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TrayIconState {
+    Open,
+    Blink,
+    Rest,
+}
+
+pub fn update_icon(app: &tauri::AppHandle, state: TrayIconState) {
+    let icon_bytes = match state {
+        TrayIconState::Open => include_bytes!("../icons/eye_openTemplate.png").as_slice(),
+        TrayIconState::Blink => include_bytes!("../icons/eye_blinkTemplate.png").as_slice(),
+        TrayIconState::Rest => include_bytes!("../icons/eye_restTemplate.png").as_slice(),
+    };
+
+    match Image::from_bytes(icon_bytes) {
+        Ok(img) => {
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_icon(Some(img));
+            }
+        }
+        Err(e) => log::warn!("Failed to load tray icon: {}", e),
+    }
 }
