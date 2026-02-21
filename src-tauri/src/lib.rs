@@ -183,7 +183,6 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
                 timer::persist_state(&ts);
                 log::info!("Break complete — restarting work timer");
                 tray::update_icon(&app, tray::TrayIconState::Open);
-                tray::update_icon(&app, tray::TrayIconState::Open);
             } else {
                 overlay::emit_break_tick(&app, break_seconds_left);
             }
@@ -249,7 +248,6 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
             notified_pre_warning = true;
             send_pre_break_notification(&app, pre_warning_secs);
             tray::update_icon(&app, tray::TrayIconState::Blink);
-            tray::update_icon(&app, tray::TrayIconState::Blink);
         }
 
         // Emit tick.
@@ -282,7 +280,6 @@ async fn run_timer_loop(app: tauri::AppHandle, timer: SharedTimerState) {
 
             overlay::open_overlays(&app, config_break_dur, is_strict);
             audio::play_break_sound(&app);
-            tray::update_icon(&app, tray::TrayIconState::Rest);
             tray::update_icon(&app, tray::TrayIconState::Rest);
             let _ = app.emit(
                 "break:start",

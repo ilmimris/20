@@ -53,12 +53,15 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
     }
 
     let icon_bytes = include_bytes!("../icons/eye_openTemplate.png");
-    let icon = Image::from_bytes(icon_bytes)
-        .unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
+    let icon = Image::from_bytes(icon_bytes).unwrap_or_else(|e| {
+        log::warn!("Failed to load embedded tray icon: {e}; falling back to default window icon");
+        app.default_window_icon()
+            .cloned()
+            .expect("No default window icon configured as fallback for tray icon")
+    });
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .icon_as_template(true)
         .tooltip("Twenty20")
         .menu(&menu)
         .show_menu_on_left_click(true)
@@ -66,10 +69,9 @@ pub fn setup_tray(app: &mut App) -> tauri::Result<()> {
             "quit" => {
                 // Ensure timer state is saved before quitting.
                 let state = app.state::<AppState>();
-                let ts = state.timer.lock().unwrap();
+                let ts = lock!(state.timer);
                 crate::timer::persist_state(&ts);
-                
-                std::process::exit(0);
+                app.exit(0);
             }
             "settings" => {
                 open_settings(app);
