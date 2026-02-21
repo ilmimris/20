@@ -88,13 +88,16 @@ fn open_overlay_window(
 
     let is_primary = index == 0;
 
-    match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("overlay.html".into()))
-        .fullscreen(true)
+    // Create the window hidden; we configure its level and frame before showing it.
+    // Do NOT use .fullscreen(true) — on macOS that triggers the native fullscreen
+    // animation which slides the window into its own separate Mission Control Space,
+    // letting the user swipe/Ctrl+← away from it or exit it with Cmd+Ctrl+F.
+    let win_result = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("overlay.html".into()))
         .always_on_top(true)
         .skip_taskbar(true)
         .decorations(false)
         .transparent(true)
-        .visible(true)
+        .visible(false)
         .initialization_script(format!(
             r#"
             window.__TWENTY20_OVERLAY_CONFIG__ = {{
@@ -104,9 +107,50 @@ fn open_overlay_window(
             }};
             "#
         ))
-        .build()
-    {
-        Ok(_win) => {
+        .build();
+
+    match win_result {
+        Ok(win) => {
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::{
+                    NSScreen, NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior,
+                };
+                use objc2_foundation::MainThreadMarker;
+
+                // Safe: open_overlay_window is always called from run_on_main_thread.
+                let mtm = MainThreadMarker::new().expect("must be on main thread");
+                let screens = NSScreen::screens(mtm);
+
+                if let Ok(raw_ptr) = win.ns_window() {
+                    unsafe {
+                        let ns_win = &*(raw_ptr as *const NSWindow);
+
+                        // Cover the exact screen frame for this display index.
+                        if index < screens.count() {
+                            let screen = screens.objectAtIndex(index);
+                            let frame = screen.frame();
+                            // Place the window over the screen without entering
+                            // macOS fullscreen mode (no new Space is created).
+                            ns_win.setFrame_display(frame, false);
+                        }
+
+                        // Raise to NSScreenSaverWindowLevel (1000) so the overlay
+                        // floats above every other window, including fullscreen apps.
+                        ns_win.setLevel(NSScreenSaverWindowLevel);
+
+                        // Appear on ALL Spaces — including any fullscreen-app Space
+                        // the user might try to switch to.
+                        ns_win.setCollectionBehavior(
+                            NSWindowCollectionBehavior::CanJoinAllSpaces
+                                | NSWindowCollectionBehavior::Stationary
+                                | NSWindowCollectionBehavior::FullScreenAuxiliary,
+                        );
+                    }
+                }
+            }
+
+            let _ = win.show();
             log::info!("Opened overlay window {label} (primary={is_primary})");
         }
         Err(e) => {
@@ -193,7 +237,10 @@ fn set_presentation_options_for_overlay() {
     app.setPresentationOptions(
         NSApplicationPresentationOptions::HideMenuBar
             | NSApplicationPresentationOptions::HideDock
-            | NSApplicationPresentationOptions::DisableAppleMenu,
+            | NSApplicationPresentationOptions::DisableAppleMenu
+            // Prevent Cmd+Tab from switching away from the overlay.
+            // Requires HideDock to also be set (Apple requirement).
+            | NSApplicationPresentationOptions::DisableProcessSwitching,
     );
 }
 

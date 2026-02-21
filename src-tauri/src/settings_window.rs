@@ -180,6 +180,8 @@ pub fn show_settings(app: &AppHandle) {
         .lock()
         .unwrap();
     if let Some(wrapper) = &*guard {
+        #[allow(deprecated)]
+        objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
         wrapper.0.makeKeyAndOrderFront(None);
         return;
     }
@@ -361,6 +363,12 @@ pub fn show_settings(app: &AppHandle) {
         .get_or_init(|| Mutex::new(None))
         .lock()
         .unwrap() = Some(DelegateWrapper(delegate));
+
+    // Bring the app to the foreground so the panel appears on top.
+    // Required because the app runs with Accessory activation policy and is not
+    // automatically active when the user clicks a tray menu item.
+    #[allow(deprecated)]
+    objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
 
     panel.makeKeyAndOrderFront(None);
     *guard = Some(PanelWrapper(panel));
