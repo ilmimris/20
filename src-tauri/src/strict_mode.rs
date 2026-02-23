@@ -112,6 +112,8 @@ mod tap {
             user_info: *mut std::ffi::c_void,
         ) -> CFMachPortRef;
 
+        fn CGEventGetIntegerValueField(event: CGEventRef, field: i32) -> i64;
+
         fn CFMachPortCreateRunLoopSource(
             alloc: *const std::ffi::c_void,
             port: CFMachPortRef,
@@ -148,14 +150,28 @@ mod tap {
     /// let res = unsafe { tap_callback(std::ptr::null_mut(), 0, std::ptr::null_mut(), std::ptr::null_mut()) };
     /// // `res` will be NULL if `EVENT_TAP_ACTIVE` is true, otherwise it will equal the provided event pointer.
     /// ```
+    // kCGEventKeyDown = 10; kCGKeyboardEventKeycode field = 9; kVK_Escape = 53
+    const KCG_EVENT_KEY_DOWN: u32 = 10;
+    const KCG_KEYBOARD_EVENT_KEYCODE: i32 = 9;
+    const KV_K_ESCAPE: i64 = 53;
+
     extern "C" fn tap_callback(
         _proxy: CGEventTapProxy,
-        _event_type: u32,
+        event_type: u32,
         event: CGEventRef,
         _user_info: *mut std::ffi::c_void,
     ) -> CGEventRef {
         if EVENT_TAP_ACTIVE.load(Ordering::SeqCst) {
-            std::ptr::null_mut() // suppress
+            // Let Escape key events through so the triple-Escape escape hatch
+            // in the overlay frontend can receive and count them.
+            if event_type == KCG_EVENT_KEY_DOWN {
+                let keycode =
+                    unsafe { CGEventGetIntegerValueField(event, KCG_KEYBOARD_EVENT_KEYCODE) };
+                if keycode == KV_K_ESCAPE {
+                    return event;
+                }
+            }
+            std::ptr::null_mut() // suppress all other events
         } else {
             event // pass through
         }
