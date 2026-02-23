@@ -155,6 +155,22 @@ mod tap {
     const KCG_KEYBOARD_EVENT_KEYCODE: i32 = 9;
     const KV_K_ESCAPE: i64 = 53;
 
+    /// Callback used by the CGEventTap to decide whether an incoming OS event should be passed through or suppressed.
+    ///
+    /// When the global event tap active flag is set, this callback suppresses all events by returning `null` except for key-down events whose keyboard keycode equals Escape — those are returned unchanged so the overlay frontend can detect triple-Escape. When the event tap is not active, the callback returns the original event unchanged.
+    ///
+    /// # Returns
+    ///
+    /// The original `CGEventRef` to allow the event to be delivered, or `null` to suppress the event.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ptr;
+    /// // Call the callback with placeholder null pointers; when the tap is inactive the same event pointer is returned.
+    /// let res = crate::tap_callback(ptr::null_mut(), 0, ptr::null_mut(), ptr::null_mut());
+    /// assert!(res.is_null());
+    /// ```
     extern "C" fn tap_callback(
         _proxy: CGEventTapProxy,
         event_type: u32,
