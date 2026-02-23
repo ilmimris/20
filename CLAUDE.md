@@ -35,7 +35,7 @@ There are no automated tests. CI runs the quality checks above.
 ## Architecture
 
 ### Layer Separation
-- **`src/`** — Svelte 5 frontend (runes mode). Only one window: `BreakOverlay.svelte` for the full-screen break overlay. The settings UI is NOT web-based.
+- **`src/`** — Svelte 5 frontend (runes mode). Only one window: `src/components/BreakOverlay.svelte` for the full-screen break overlay. The settings UI is NOT web-based.
 - **`src-tauri/src/`** — Rust backend. All timer logic, system integration, and macOS APIs live here.
 
 ### Key Rust Modules
@@ -48,7 +48,7 @@ There are no automated tests. CI runs the quality checks above.
 | `tray.rs` | System tray icon + menu, icon state animation |
 | `overlay.rs` | Creates/destroys full-screen webview windows on all displays |
 | `settings_window.rs` | **Native NSPanel** settings UI built with objc2 (not a webview) |
-| `strict_mode.rs` | CGEventTap input suppression during breaks; Escape×3 in 5s to force-skip |
+| `strict_mode.rs` | CGEventTap input suppression during breaks; must explicitly pass Escape key events through the tap so the JS escape hatch in `BreakOverlay.svelte` can count them |
 | `meeting.rs` | Polls every 30s for active video calls (NSWorkspace + window title scan) |
 | `audio.rs` | Native NSSound playback |
 
@@ -92,6 +92,7 @@ User-editable settings in `~/.config/twenty20/config.toml`:
 ## Important Constraints
 
 - **Strict mode breaks cannot be dismissed** except via the triple-Escape escape hatch (3 presses in 5 seconds). This is intentional per the PRD.
+- **CGEventTap runs at HID level** — it drops events before they reach the WKWebView or any JavaScript handler. Any key the overlay frontend needs to receive (e.g. Escape) must be explicitly allowed through in `tap_callback` in `strict_mode.rs`. The triple-Escape counter lives in `BreakOverlay.svelte`.
 - The settings window is a **native NSPanel** (objc2), not a Tauri webview — changes to settings UI require Rust/objc2 code, not Svelte.
 - The tray icon uses embedded PNG bytes (not file paths) and has three states: open eye (normal), blink (pre-warning), rest (break active).
 - `rodio` is listed in Cargo.toml but unused — audio uses NSSound exclusively.
